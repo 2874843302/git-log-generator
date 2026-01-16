@@ -1,0 +1,14 @@
+{
+  "name": "git-log-generator-root",
+  "version": "1.0.0",
+  "description": "Git Log Generator - Root Manager",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "dev": "npm run dev --prefix backend",
+    "start": "npm run server --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
