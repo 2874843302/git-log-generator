@@ -27,7 +27,8 @@ function App() {
   const [templateOptions, setTemplateOptions] = useState({
     includeTomorrow: true,
     includeReflections: false,
-    includeProblems: true
+    includeProblems: true,
+    includeDiffContent: false // 深度分析选项
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -111,6 +112,7 @@ function App() {
     try {
       const res = await axios.post(`${API_BASE}/generate-log`, {
         logs,
+        repoPaths, // 传递仓库路径以便后端按需获取 diff
         templateKey: selectedTemplate,
         customPrompt: customPrompt,
         options: templateOptions
@@ -309,6 +311,33 @@ function App() {
                           onChange={(e) => setTemplateOptions({...templateOptions, includeReflections: e.target.checked})}
                         />
                         <span className="text-sm text-gray-600 group-hover:text-gray-900 transition">心得收获</span>
+                      </label>
+                      <label 
+                        className="flex items-center gap-2 cursor-pointer group relative"
+                      >
+                        <input 
+                          type="checkbox" 
+                          className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                          checked={templateOptions.includeDiffContent}
+                          onChange={(e) => setTemplateOptions({...templateOptions, includeDiffContent: e.target.checked})}
+                        />
+                        <span className="text-sm text-gray-600 group-hover:text-gray-900 transition flex items-center gap-1">
+                          深度代码分析
+                          <AlertCircle size={12} className="text-gray-400" />
+                        </span>
+
+                        {/* 自定义警告提示气泡 */}
+                        <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-red-50 border border-red-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                          <p className="text-xs text-red-600 font-bold mb-1 flex items-center gap-1">
+                            <AlertCircle size={12} /> 慎重选择
+                          </p>
+                          <p className="text-[11px] text-red-500 leading-relaxed whitespace-pre-line">
+                            开启后将拉取详细代码变更进行分析。{"\n"}
+                            内容较多，适用于提交描述不详细的情况。{"\n"}
+                            注意：若单次变更代码量巨大，可能导致生成缓慢或失败。
+                          </p>
+                          <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-red-50" />
+                        </div>
                       </label>
                     </div>
                   </div>
