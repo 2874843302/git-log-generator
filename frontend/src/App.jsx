@@ -6,7 +6,8 @@ import {
 } from 'recharts';
 import { 
   Calendar, GitCommit, FileText, Settings, 
-  Download, Loader2, AlertCircle, Plus, Trash2, Folder
+  Download, Loader2, AlertCircle, Plus, Trash2, Folder,
+  Eye, EyeOff
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -20,6 +21,7 @@ function App() {
   const [authors, setAuthors] = useState([]);
   const [selectedAuthor, setSelectedAuthor] = useState('');
   const [logs, setLogs] = useState([]);
+  const [ignoredHashes, setIgnoredHashes] = useState(new Set());
   const [templates, setTemplates] = useState({});
   const [selectedTemplate, setSelectedTemplate] = useState('daily');
   const [generatedLog, setGeneratedLog] = useState('');
@@ -86,6 +88,7 @@ function App() {
     }
     setLoading(true);
     setError('');
+    setIgnoredHashes(new Set()); // 获取新记录时清空忽略列表
     try {
       const res = await axios.post(`${API_BASE}/git-logs`, {
         repoPaths,
@@ -106,12 +109,31 @@ function App() {
     }
   };
 
+  const toggleIgnore = (hash) => {
+    const newIgnored = new Set(ignoredHashes);
+    if (newIgnored.has(hash)) {
+      newIgnored.delete(hash);
+    } else {
+      newIgnored.add(hash);
+    }
+    setIgnoredHashes(newIgnored);
+  };
+
   const generateLog = async () => {
     setLoading(true);
     setError('');
     try {
+      // 过滤掉被忽略的提交
+      const filteredLogs = logs.filter(log => !ignoredHashes.has(log.hash));
+      
+      if (filteredLogs.length === 0) {
+        setError('没有可供生成的有效提交记录（所有记录已被忽略或未获取）');
+        setLoading(false);
+        return;
+      }
+
       const res = await axios.post(`${API_BASE}/generate-log`, {
-        logs,
+        logs: filteredLogs,
         repoPaths, // 传递仓库路径以便后端按需获取 diff
         templateKey: selectedTemplate,
         customPrompt: customPrompt,
@@ -327,16 +349,14 @@ function App() {
                         </span>
 
                         {/* 自定义警告提示气泡 */}
-                        <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-red-50 border border-red-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
-                          <p className="text-xs text-red-600 font-bold mb-1 flex items-center gap-1">
-                            <AlertCircle size={12} /> 慎重选择
+                        <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                          <p className="text-xs text-blue-600 font-bold mb-1 flex items-center gap-1">
+                            <AlertCircle size={12} /> 功能说明
                           </p>
-                          <p className="text-[11px] text-red-500 leading-relaxed whitespace-pre-line">
-                            开启后将拉取详细代码变更进行分析。{"\n"}
-                            内容较多，适用于提交描述不详细的情况。{"\n"}
-                            注意：若单次变更代码量巨大，可能导致生成缓慢或失败。
+                          <p className="text-[11px] text-blue-500 leading-relaxed">
+                            选择这个会产生详细的代码变更描述，内容比较多，适用于提交时描述不详细的选择并且对变更代码量有要求。
                           </p>
-                          <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-red-50" />
+                          <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-blue-50" />
                         </div>
                       </label>
                     </div>
@@ -416,21 +436,58 @@ function App() {
                 </div>
 
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <h3 className="text-md font-semibold mb-4 text-gray-700">提交详情 ({logs.length})</h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-md font-semibold text-gray-700">提交详情 ({logs.length})</h3>
+                    {ignoredHashes.size > 0 && (
+                      <span className="text-xs text-gray-400">已忽略 {ignoredHashes.size} 条记录</span>
+                    )}
+                  </div>
                   <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
-                    {logs.map((log, idx) => (
-                      <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-blue-200 transition">
-                        <div className="flex justify-between items-start mb-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{log.hash.substring(0, 7)}</span>
-                            <span className="text-xs text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded uppercase font-bold border border-indigo-100">{log.repoName}</span>
+                    {logs.map((log, idx) => {
+                      const isIgnored = ignoredHashes.has(log.hash);
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`p-3 rounded-lg border transition ${
+                            isIgnored 
+                              ? 'bg-gray-100 border-gray-200 opacity-60 grayscale' 
+                              : 'bg-gray-50 border-gray-100 hover:border-blue-200'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                                isIgnored ? 'bg-gray-200 text-gray-500 border-gray-300' : 'bg-blue-50 text-blue-600 border-blue-100'
+                              }`}>
+                                {log.hash.substring(0, 7)}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded uppercase font-bold border ${
+                                isIgnored ? 'bg-gray-200 text-gray-500 border-gray-300' : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                              }`}>
+                                {log.repoName}
+                              </span>
+                              {isIgnored && <span className="text-[10px] bg-gray-200 text-gray-500 px-1 rounded">已忽略</span>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-gray-400">{dayjs(log.date).format('YYYY-MM-DD HH:mm')}</span>
+                              <button 
+                                onClick={() => toggleIgnore(log.hash)}
+                                className={`p-1 rounded transition-colors ${
+                                  isIgnored ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                                }`}
+                                title={isIgnored ? "恢复提交" : "忽略此提交"}
+                              >
+                                {isIgnored ? <Eye size={14} /> : <EyeOff size={14} />}
+                              </button>
+                            </div>
                           </div>
-                          <span className="text-xs text-gray-400">{dayjs(log.date).format('YYYY-MM-DD HH:mm')}</span>
+                          <p className={`text-sm font-medium ${isIgnored ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                            {log.message}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">Author: {log.author_name}</p>
                         </div>
-                        <p className="text-sm text-gray-800 font-medium">{log.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">Author: {log.author_name}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {logs.length === 0 && (
                       <div className="text-center py-8 text-gray-400">暂无提交记录</div>
                     )}
