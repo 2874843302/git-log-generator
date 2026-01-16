@@ -18,6 +18,8 @@ function App() {
   const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [authors, setAuthors] = useState([]);
   const [selectedAuthor, setSelectedAuthor] = useState('');
+  const [branches, setBranches] = useState([]);
+  const [selectedBranches, setSelectedBranches] = useState([]);
   const [logs, setLogs] = useState([]);
   const [ignoredHashes, setIgnoredHashes] = useState(new Set());
   const [templates, setTemplates] = useState({});
@@ -56,6 +58,7 @@ function App() {
         const newPaths = [...repoPaths, res.data.path];
         setRepoPaths(newPaths);
         fetchAuthors(newPaths);
+        fetchBranches(newPaths);
       }
     } catch (err) {
       setError('无法打开文件夹选择器');
@@ -67,8 +70,11 @@ function App() {
     setRepoPaths(newPaths);
     if (newPaths.length > 0) {
       fetchAuthors(newPaths);
+      fetchBranches(newPaths);
     } else {
       setAuthors([]);
+      setBranches([]);
+      setSelectedBranches([]);
     }
   };
 
@@ -78,6 +84,15 @@ function App() {
       setAuthors(res.data.authors);
     } catch (err) {
       console.error('获取作者列表失败', err);
+    }
+  };
+
+  const fetchBranches = async (paths) => {
+    try {
+      const res = await axios.post(`${API_BASE}/git-branches`, { repoPaths: paths });
+      setBranches(res.data.branches);
+    } catch (err) {
+      console.error('获取分支列表失败', err);
     }
   };
 
@@ -94,7 +109,8 @@ function App() {
         repoPaths,
         startDate,
         endDate,
-        author: selectedAuthor
+        author: selectedAuthor,
+        branches: selectedBranches
       });
       setLogs(res.data.logs);
       if (res.data.logs.length > 0) {
@@ -178,19 +194,22 @@ function App() {
           {/* 左侧配置栏 */}
           <div className="lg:col-span-1 space-y-6">
             <ConfigPanel 
-              repoPaths={repoPaths}
-              selectFolder={selectFolder}
-              removeFolder={removeFolder}
-              authors={authors}
-              selectedAuthor={selectedAuthor}
-              setSelectedAuthor={setSelectedAuthor}
-              startDate={startDate}
-              setStartDate={setStartDate}
-              endDate={endDate}
-              setEndDate={setEndDate}
-              fetchLogs={fetchLogs}
-              loading={loading}
-            />
+            repoPaths={repoPaths}
+            selectFolder={selectFolder}
+            removeFolder={removeFolder}
+            authors={authors}
+            selectedAuthor={selectedAuthor}
+            setSelectedAuthor={setSelectedAuthor}
+            branches={branches}
+            selectedBranches={selectedBranches}
+            setSelectedBranches={setSelectedBranches}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            fetchLogs={fetchLogs}
+            loading={loading}
+          />
 
             <LogGenerator 
               logs={logs}

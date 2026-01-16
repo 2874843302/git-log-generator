@@ -17,9 +17,24 @@ router.post('/git-authors', async (req, res) => {
     }
 });
 
+// API: 获取仓库所有分支
+router.post('/git-branches', async (req, res) => {
+    const { repoPaths } = req.body;
+    if (!repoPaths || !Array.isArray(repoPaths) || repoPaths.length === 0) {
+        return res.status(400).json({ error: '请提供有效的仓库路径列表' });
+    }
+
+    try {
+        const branches = await gitService.getBranches(repoPaths);
+        res.json({ branches });
+    } catch (error) {
+        res.status(500).json({ error: '获取分支列表失败: ' + error.message });
+    }
+});
+
 // API: 获取 Git 记录
 router.post('/git-logs', async (req, res) => {
-    const { repoPaths, startDate, endDate, author } = req.body;
+    const { repoPaths, startDate, endDate, author, branches } = req.body;
     if (!repoPaths || !Array.isArray(repoPaths) || repoPaths.length === 0) {
         return res.status(400).json({ error: '请提供有效的仓库路径列表' });
     }
@@ -28,7 +43,7 @@ router.post('/git-logs', async (req, res) => {
         let allLogs = [];
         for (const path of repoPaths) {
             const repoName = path.split(/[\\/]/).pop();
-            const logs = await gitService.getGitLogs(path, startDate, endDate, author);
+            const logs = await gitService.getGitLogs(path, startDate, endDate, author, branches);
             const taggedLogs = logs.map(l => ({ ...l, repoName }));
             allLogs = allLogs.concat(taggedLogs);
         }

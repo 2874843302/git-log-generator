@@ -6,23 +6,34 @@ const simpleGit = require('simple-git');
  * @param {string} startDate 开始日期 (YYYY-MM-DD)
  * @param {string} endDate 结束日期 (YYYY-MM-DD)
  * @param {string} author 作者名 (可选)
+ * @param {Array} branches 分支列表 (可选)
  */
-async function getGitLogs(repoPath, startDate, endDate, author) {
+async function getGitLogs(repoPath, startDate, endDate, author, branches) {
     const git = simpleGit(repoPath);
+    
+    // 如果没有指定分支，默认使用 --all
+    const useAll = !branches || branches.length === 0;
+
     const options = {
-        '--all': true, // 获取所有分支的记录
+        '--all': useAll ? true : undefined,
         '--after': startDate ? `${startDate} 00:00:00` : undefined,
         '--before': endDate ? `${endDate} 23:59:59` : undefined,
         '--author': author || undefined,
     };
 
-    // 过滤掉 undefined 的选项
-    const filteredOptions = Object.fromEntries(
-        Object.entries(options).filter(([_, v]) => v !== undefined)
-    );
+    // 如果指定了分支，将分支名添加到选项中
+    const args = [];
+    if (!useAll) {
+        args.push(...branches);
+    }
+
+    // 过滤掉 undefined 的选项并转换为数组
+    const filteredOptions = Object.entries(options)
+        .filter(([_, v]) => v !== undefined)
+        .map(([k, v]) => (v === true ? k : `${k}=${v}`));
 
     try {
-        const logs = await git.log(filteredOptions);
+        const logs = await git.log([...filteredOptions, ...args]);
         return logs.all;
     } catch (error) {
         throw new Error(`无法读取 Git 记录: ${error.message}`);
@@ -78,8 +89,28 @@ async function getAuthors(repoPaths) {
     return Array.from(allAuthors);
 }
 
+/**
+ * 获取仓库所有分支
+ * @param {Array} repoPaths 仓库路径列表
+ */
+async function getBranches(repoPaths) {
+    let allBranches = new Set();
+    for (const path of repoPaths) {
+        const git = simpleGit(path);
+        // 获取本地和远程所有分支
+        const result = await git.branch(['-a']);
+        result.all.forEach(b => {
+            // 清理分支名，去掉 remotes/origin/ 等前缀，只保留核心分支名
+            let name = b.replace(/^remotes\/[^\/]+\//, '').replace(/^\* /, '').trim();
+            if (name) allBranches.add(name);
+        });
+    }
+    return Array.from(allBranches);
+}
+
 module.exports = {
     getGitLogs,
     enrichLogs,
-    getAuthors
+    getAuthors,
+    getBranches
 };

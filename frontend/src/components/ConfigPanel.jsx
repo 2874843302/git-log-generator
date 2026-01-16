@@ -8,6 +8,9 @@ const ConfigPanel = ({
   authors, 
   selectedAuthor, 
   setSelectedAuthor, 
+  branches,
+  selectedBranches,
+  setSelectedBranches,
   startDate, 
   setStartDate, 
   endDate, 
@@ -15,6 +18,14 @@ const ConfigPanel = ({
   fetchLogs, 
   loading 
 }) => {
+  const toggleBranch = (branch) => {
+    setSelectedBranches(prev => 
+      prev.includes(branch) 
+        ? prev.filter(b => b !== branch) 
+        : [...prev, branch]
+    );
+  };
+
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
       <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-gray-800 border-b pb-3">
@@ -76,6 +87,36 @@ const ConfigPanel = ({
                 <option key={author} value={author}>{author}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {branches.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 flex justify-between items-center">
+              <span>筛选分支</span>
+              <button 
+                onClick={() => setSelectedBranches(selectedBranches.length === branches.length ? [] : [...branches])}
+                className="text-blue-600 hover:text-blue-700 text-xs font-semibold"
+              >
+                {selectedBranches.length === branches.length ? '取消全选' : '全选'}
+              </button>
+            </label>
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50">
+              {branches.map(branch => (
+                <button
+                  key={branch}
+                  onClick={() => toggleBranch(branch)}
+                  className={`px-2 py-1 rounded-full text-[10px] font-medium transition ${
+                    selectedBranches.includes(branch)
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                      : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  {branch}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">未选择任何分支时默认拉取所有分支</p>
           </div>
         )}
 
