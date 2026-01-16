@@ -24,6 +24,7 @@ function App() {
   const [selectedTemplate, setSelectedTemplate] = useState('daily');
   const [generatedLog, setGeneratedLog] = useState('');
   const [customPrompt, setCustomPrompt] = useState('');
+  const [referenceLog, setReferenceLog] = useState('');
   const [templateOptions, setTemplateOptions] = useState({
     includeTomorrow: true,
     includeReflections: false,
@@ -134,6 +135,7 @@ function App() {
         repoPaths,
         templateKey: selectedTemplate,
         customPrompt: customPrompt,
+        referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
         options: templateOptions
       });
       setGeneratedLog(res.data.content);
@@ -199,6 +201,8 @@ function App() {
               setTemplateOptions={setTemplateOptions}
               customPrompt={customPrompt}
               setCustomPrompt={setCustomPrompt}
+              referenceLog={referenceLog}
+              setReferenceLog={setReferenceLog}
               generateLog={generateLog}
               loading={loading}
             />

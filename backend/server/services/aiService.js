@@ -5,13 +5,26 @@ const { templates } = require('../constants/templates');
  * 组装 AI Prompt 并调用 API 生成日志
  */
 async function generateAILog(params) {
-    const { logs, templateKey, customPrompt, options, repoPaths, apiKey } = params;
+    const { logs, templateKey, customPrompt, referenceLog, options, repoPaths, apiKey } = params;
 
     // 1. Prompt 基础模版
-    let templatePrompt = templates[templateKey] || templates.daily;
+    let templatePrompt = '';
+    
+    if (templateKey === 'custom' && referenceLog) {
+        templatePrompt = `作为一名专业的软件项目经理，请根据提供的 Git 提交记录生成一份工作日志。
+**特别要求**：你必须严格模仿以下【参考日志】的**语言风格、排版格式、语气以及内容的深度**。
 
-    // 2. 根据选项添加要求
-    if (options) {
+【参考日志开始】
+${referenceLog}
+【参考日志结束】
+
+请确保生成的日志在视觉结构和叙事方式上与上述参考内容保持高度一致。`;
+    } else {
+        templatePrompt = templates[templateKey] || templates.daily;
+    }
+
+    // 2. 根据选项添加要求 (仅在非自定义模式下强制注入板块，或者作为补充)
+    if (options && templateKey !== 'custom') {
         const requirements = [];
         if (options.includeProblems) {
             requirements.push("### 遇到的问题及解决方法\n分析提交记录中的 bug 修复或困难点，并总结解决方法。列表从 1. 开始计数。");

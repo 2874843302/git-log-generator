@@ -10,6 +10,8 @@ const LogGenerator = ({
   setTemplateOptions, 
   customPrompt, 
   setCustomPrompt, 
+  referenceLog,
+  setReferenceLog,
   generateLog, 
   loading 
 }) => {
@@ -41,8 +43,21 @@ const LogGenerator = ({
               };
               return <option key={key} value={key}>{labels[key] || key}</option>;
             })}
+            <option value="custom">✍️ 自定义参考日志</option>
           </select>
         </div>
+
+        {selectedTemplate === 'custom' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">参考日志 (模仿该风格)</label>
+            <textarea 
+              placeholder="请粘贴您之前写过的日志内容，AI 将模仿其格式和风格生成..."
+              className="w-full p-2 border border-gray-300 rounded-md text-sm h-32 resize-none"
+              value={referenceLog}
+              onChange={(e) => setReferenceLog(e.target.value)}
+            />
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">包含板块</label>

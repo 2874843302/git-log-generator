@@ -6,7 +6,7 @@ const { templates } = require('../constants/templates');
 
 // API: 生成 AI 日志
 router.post('/generate-log', async (req, res) => {
-    const { logs, templateKey, customPrompt, options, repoPaths } = req.body;
+    const { logs, templateKey, customPrompt, referenceLog, options, repoPaths } = req.body;
     const apiKey = process.env.DEEPSEEK_API_KEY;
 
     if (!apiKey || apiKey === 'your_api_key_here') {
@@ -36,6 +36,7 @@ router.post('/generate-log', async (req, res) => {
             logs: enrichedLogs,
             templateKey,
             customPrompt,
+            referenceLog,
             options,
             repoPaths,
             apiKey
