@@ -1,16 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check } from 'lucide-react';
+import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfigPanel = ({ 
   repoPaths, 
   selectFolder, 
   removeFolder, 
-  baseDir,
-  updateBaseDir,
-  apiKey,
-  updateApiKey,
-  openApiKeyModal,
   authors, 
   selectedAuthor, 
   setSelectedAuthor, 
@@ -24,7 +19,8 @@ const ConfigPanel = ({
   setEndDate, 
   fetchLogs, 
   loading,
-  openBranchPicker
+  openBranchPicker,
+  openSettings
 }) => {
 
   const [authorDropdownOpen, setAuthorDropdownOpen] = useState(false);
@@ -48,56 +44,33 @@ const ConfigPanel = ({
     <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
       {/* 基础配置区 */}
       <section className="space-y-4">
-        <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider px-1">
-          <Settings size={14} />
-          <span>基础配置</span>
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+            <Folder size={14} />
+            <span>项目仓库</span>
+          </div>
+          <button 
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              openSettings({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+            }}
+            className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-all border border-blue-100"
+            title="全局设置"
+          >
+            <Settings size={10} />
+            全局设置
+          </button>
         </div>
         
         <div className="bg-gray-50/50 p-3 rounded-xl border border-gray-100 space-y-3">
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">工作根目录</label>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-[10px] text-gray-600 truncate shadow-sm">
-                {baseDir || '未设置'}
-              </div>
-              <button 
-                onClick={updateBaseDir}
-                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100 bg-white"
-                title="修改基础目录"
-              >
-                <Folder size={16} />
-              </button>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="text-[11px] font-semibold text-gray-500">已添加仓库</label>
+              <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-md">{repoPaths.length} 个</span>
             </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">DeepSeek API Key</label>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-[10px] text-gray-600 truncate shadow-sm font-mono">
-                {apiKey ? '•'.repeat(24) : '未配置'}
-              </div>
-              <button 
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const pos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-                  openApiKeyModal(pos);
-                }}
-                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100 bg-white"
-                title="配置 API Key"
-              >
-                <Key size={16} />
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block flex justify-between">
-              <span>项目仓库</span>
-              <span className="text-blue-500">{repoPaths.length} 个</span>
-            </label>
-            <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
               {repoPaths.map((path, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200 group hover:border-blue-200 transition-all">
+                <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200 group hover:border-blue-200 transition-all shadow-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
                     <span className="text-[11px] text-gray-700 truncate font-medium">
@@ -114,9 +87,9 @@ const ConfigPanel = ({
               ))}
               <button 
                 onClick={selectFolder}
-                className="w-full py-2 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30 transition-all text-[11px] font-medium"
+                className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30 transition-all text-[11px] font-bold"
               >
-                <Plus size={14} /> 添加仓库
+                <Plus size={14} /> 添加新仓库
               </button>
             </div>
           </div>

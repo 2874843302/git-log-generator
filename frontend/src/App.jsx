@@ -11,9 +11,9 @@ import CommitVisualizer from './components/CommitVisualizer';
 import MarkdownPreview from './components/MarkdownPreview';
 import FolderPickerModal from './components/FolderPickerModal';
 import BranchPickerModal from './components/BranchPickerModal';
-import ApiKeyModal from './components/ApiKeyModal';
 import TomorrowPlanModal from './components/TomorrowPlanModal';
 import TemplatePreviewModal from './components/TemplatePreviewModal';
+import SettingsModal from './components/SettingsModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
@@ -48,13 +48,13 @@ function App() {
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerPos, setBranchPickerPos] = useState({ x: '50%', y: '50%' });
-  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
-  const [apiKeyModalPos, setApiKeyModalPos] = useState(null);
   const [tomorrowPlanModalOpen, setTomorrowPlanModalOpen] = useState(false);
   const [tomorrowPlanModalPos, setTomorrowPlanModalPos] = useState(null);
   const [tomorrowPlanPrompt, setTomorrowPlanPrompt] = useState('');
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
   const [templatePreviewPos, setTemplatePreviewPos] = useState(null);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsModalPos, setSettingsModalPos] = useState(null);
 
   useEffect(() => {
     fetchTemplates();
@@ -69,6 +69,19 @@ function App() {
       if (res.data.DEEPSEEK_API_KEY) setApiKey(res.data.DEEPSEEK_API_KEY);
     } catch (err) {
       console.error('获取配置信息失败', err);
+    }
+  };
+
+  const initEnv = async () => {
+    try {
+      setLoading(true);
+      const res = await axios.post(`${API_BASE}/init-env`);
+      alert(res.data.message + '\n' + res.data.details.join('\n'));
+      fetchConfig(); // 重新加载配置
+    } catch (err) {
+      setError(err.response?.data?.message || '初始化环境失败');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -293,14 +306,6 @@ function App() {
             repoPaths={repoPaths}
             selectFolder={selectFolder}
             removeFolder={removeFolder}
-            baseDir={baseDir}
-            updateBaseDir={(e) => updateBaseDir(e)}
-            apiKey={apiKey}
-            updateApiKey={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
-            openApiKeyModal={(pos) => {
-              setApiKeyModalPos(pos);
-              setApiKeyModalOpen(true);
-            }}
             authors={authors}
             selectedAuthor={selectedAuthor}
             setSelectedAuthor={setSelectedAuthor}
@@ -315,8 +320,12 @@ function App() {
             fetchLogs={fetchLogs}
             loading={loading}
             openBranchPicker={(pos) => {
-              if (pos) setBranchPickerPos(pos);
               setBranchPickerOpen(true);
+              setBranchPickerPos(pos);
+            }}
+            openSettings={(pos) => {
+              setSettingsModalOpen(true);
+              setSettingsModalPos(pos);
             }}
           />
 
@@ -458,18 +467,6 @@ function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {apiKeyModalOpen && (
-          <ApiKeyModal 
-            isOpen={apiKeyModalOpen}
-            onClose={() => setApiKeyModalOpen(false)}
-            apiKey={apiKey}
-            onSave={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
-            originPos={apiKeyModalPos}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
         {tomorrowPlanModalOpen && (
           <TomorrowPlanModal 
             isOpen={tomorrowPlanModalOpen}
@@ -487,6 +484,22 @@ function App() {
             isOpen={templatePreviewOpen}
             onClose={() => setTemplatePreviewOpen(false)}
             originPos={templatePreviewPos}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {settingsModalOpen && (
+          <SettingsModal 
+            isOpen={settingsModalOpen}
+            onClose={() => setSettingsModalOpen(false)}
+            baseDir={baseDir}
+            updateBaseDir={(e) => updateBaseDir(e)}
+            apiKey={apiKey}
+            updateApiKey={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
+            initEnv={initEnv}
+            loading={loading}
+            originPos={settingsModalPos}
           />
         )}
       </AnimatePresence>

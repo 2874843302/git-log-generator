@@ -6,6 +6,7 @@ require('dotenv').config();
 const gitRoutes = require('./routes/gitRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const folderRoutes = require('./routes/folderRoutes');
+const systemRoutes = require('./routes/systemRoutes');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -18,6 +19,7 @@ app.use(express.json());
 app.use('/api', gitRoutes);
 app.use('/api', aiRoutes);
 app.use('/api', folderRoutes);
+app.use('/api', systemRoutes);
 
 // 启动服务器
 app.listen(port, () => {

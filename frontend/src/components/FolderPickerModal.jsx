@@ -63,7 +63,7 @@ const FolderPickerModal = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 overflow-hidden">
       {/* 背景遮罩 */}
       <motion.div 
         initial={{ opacity: 0 }}
