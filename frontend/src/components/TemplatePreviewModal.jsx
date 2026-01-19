@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, Sparkles, LayoutGrid, ArrowLeft } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { templateExamples } from '../constants/templateExamples';
 
 /**
@@ -159,13 +161,22 @@ const TemplatePreviewModal = ({ isOpen, onClose, originPos = null }) => {
                         Markdown Preview
                       </div>
 
-                      <div className="mt-6 font-mono text-sm leading-relaxed text-gray-300 whitespace-pre-wrap">
+                      <div className="mt-6 font-mono text-sm leading-relaxed text-gray-300">
                         <motion.div
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ delay: 0.2 }}
+                          className="prose prose-invert prose-sm max-w-none 
+                            prose-headings:font-bold prose-headings:text-white prose-headings:mb-3 prose-headings:mt-6
+                            prose-p:text-gray-300 prose-p:leading-relaxed
+                            prose-li:text-gray-300 prose-li:my-1
+                            prose-strong:text-green-400 prose-strong:font-bold
+                            prose-code:text-indigo-300 prose-code:bg-indigo-500/10 prose-code:px-1 prose-code:rounded
+                            prose-ul:list-disc prose-ol:list-decimal"
                         >
-                          {selectedTemplate.content}
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {selectedTemplate.content}
+                          </ReactMarkdown>
                         </motion.div>
                       </div>
 

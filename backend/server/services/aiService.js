@@ -26,30 +26,46 @@ ${referenceLog}
     // 2. 根据选项添加要求 (仅在非自定义模式下强制注入板块，或者作为补充)
     if (options && templateKey !== 'custom') {
         const requirements = [];
+        const isWeekly = templateKey === 'weekly';
+        const isConcise = templateKey === 'concise';
+        const isKpi = templateKey === 'kpi';
+        const periodText = isWeekly ? "本周" : (isKpi ? "考核期内" : "今日");
+        
+        let mainTitle = `### ${periodText}完成工作（基于 Git 记录）`;
+        if (isKpi) mainTitle = `### 核心业务价值产出`;
+        
+        const conciseSuffix = isConcise ? "（语言必须极度精简，每条不超过30字）" : "";
+
         if (options.includeProblems) {
-            requirements.push("### 遇到的问题及解决方法\n分析提交记录中的 bug 修复或困难点，并总结解决方法。列表从 1. 开始计数。");
+            const problemTitle = isKpi ? "### 难点攻克与问题解决" : "### 遇到的问题及解决方法";
+            requirements.push(`${problemTitle}\n请根据${periodText}完成工作的技术复杂度和代码变更，推断并描述在开发过程中实际可能遇到的技术难点或逻辑陷阱，并将其作为“自己遇到的问题”进行陈述，同时给出专业的解决方法。描述要真实、具体，避免空洞。${conciseSuffix}列表从 1. 开始计数。`);
         }
         if (options.includeReflections) {
-            requirements.push("### 心得收获与技术感悟\n基于今日的代码变动，总结深层的技术思考、架构优化的意义或开发过程中的经验教训。列表从 1. 开始计数。");
+            const reflectionTitle = isKpi ? "### 技术影响力与沉淀" : "### 心得收获与技术感悟";
+            requirements.push(`${reflectionTitle}\n基于${periodText}的代码变动，总结深层的技术思考、架构优化的意义或开发过程中的经验教训。${conciseSuffix}列表从 1. 开始计数。`);
         }
         if (options.includeTomorrow) {
-            let tomorrowReq = "### 明日计划\n根据今日工作进度，合理规划接下来的开发任务。列表从 1. 开始计数。";
+            const tomorrowTitle = isWeekly ? "### 下周计划" : (isKpi ? "### 后续规划与目标" : "### 明日计划");
+            let tomorrowReq = `${tomorrowTitle}\n根据${periodText}工作进度，合理规划接下来的开发任务。${conciseSuffix}列表从 1. 开始计数。`;
             if (tomorrowPlanPrompt) {
-                tomorrowReq += `\n**特别参考用户提供的明日计划关键词**：${tomorrowPlanPrompt}\n请基于这些关键词，结合今日的工作内容，生成更具体、更丰富的明日计划描述。`;
+                tomorrowReq += `\n**特别参考用户提供的计划关键词**：${tomorrowPlanPrompt}\n请基于这些关键词，结合${periodText}的工作内容，生成更具体、更丰富的计划描述。${conciseSuffix}`;
             }
             requirements.push(tomorrowReq);
         }
         
         if (requirements.length > 0) {
-            templatePrompt += `\n请在生成的日志中，**严格按照以下顺序**包含这些板块：\n### 今日完成工作（基于 Git 记录）\n汇总今日代码变更。列表从 1. 开始计数。\n${requirements.join('\n')}`;
+            templatePrompt += `\n请在生成的日志中，**严格按照以下顺序**包含这些板块：\n${mainTitle}\n汇总${periodText}代码变更及价值。${conciseSuffix}列表从 1. 开始计数。\n${requirements.join('\n')}`;
         } else {
-            templatePrompt += `\n请仅在 ### 今日完成工作 标题下对内容进行分类汇总，**禁止**出现明日计划、心得感悟或问题总结等其他板块。`;
+            templatePrompt += `\n请仅在 ${mainTitle} 标题下对内容进行分类汇总，**禁止**出现${isWeekly ? '下周计划' : '明日计划'}、心得感悟或问题总结等其他板块。${conciseSuffix}`;
         }
     }
 
     templatePrompt += `\n\n**严格遵循以下规范**：
 1. **内容深度与润色**：
    - **核心任务**：你不仅要看提交信息，更要${options?.includeDiffContent ? '**深度解析提供的代码差分 (diffContent)**' : '结合文件变更统计 (diffStat)'}。
+   - **描述原则（强制执行）**：
+     - **禁止套话**：严禁使用“为后续实现XXX奠定了基础”、“为XXX提供了支撑”、“为XXX创造了条件”等铺垫式套话。
+     - **纯技术描述**：只描述当前逻辑的具体作用、执行流程、技术细节。
    - **分析细节**：
      ${options?.includeDiffContent ? '- 分析 diff 中的新函数定义、逻辑判断变动以及 API 接口的修改。' : '- 根据文件变更统计，分析哪些模块变动较大。'}
      - 使用如“优化了核心算法”、“修正了临界状态下的并发问题”、“重构了 UI 组件以提升复用性”等具体且专业的描述。
