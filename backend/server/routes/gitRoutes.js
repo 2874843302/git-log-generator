@@ -42,8 +42,17 @@ router.post('/git-logs', async (req, res) => {
     try {
         let allLogs = [];
         for (const path of repoPaths) {
-            const repoName = path.split(/[\\/]/).pop();
-            const logs = await gitService.getGitLogs(path, startDate, endDate, author, branches);
+            const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+            
+            // 如果 branches 是对象，则获取该仓库对应的分支列表
+            let repoBranches = [];
+            if (branches && typeof branches === 'object' && !Array.isArray(branches)) {
+                repoBranches = branches[path] || [];
+            } else if (Array.isArray(branches)) {
+                repoBranches = branches;
+            }
+
+            const logs = await gitService.getGitLogs(path, startDate, endDate, author, repoBranches);
             const taggedLogs = logs.map(l => ({ ...l, repoName }));
             allLogs = allLogs.concat(taggedLogs);
         }

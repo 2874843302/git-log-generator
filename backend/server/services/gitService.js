@@ -90,22 +90,34 @@ async function getAuthors(repoPaths) {
 }
 
 /**
- * 获取仓库所有分支
+ * 获取仓库所有分支（按仓库分组）
  * @param {Array} repoPaths 仓库路径列表
  */
 async function getBranches(repoPaths) {
-    let allBranches = new Set();
+    let repoBranches = [];
     for (const path of repoPaths) {
-        const git = simpleGit(path);
-        // 获取本地和远程所有分支
-        const result = await git.branch(['-a']);
-        result.all.forEach(b => {
-            // 清理分支名，去掉 remotes/origin/ 等前缀，只保留核心分支名
-            let name = b.replace(/^remotes\/[^\/]+\//, '').replace(/^\* /, '').trim();
-            if (name) allBranches.add(name);
-        });
+        try {
+            const git = simpleGit(path);
+            const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+            const result = await git.branch(['-a']);
+            const branches = new Set();
+            
+            result.all.forEach(b => {
+                // 清理分支名，去掉 remotes/origin/ 等前缀，只保留核心分支名
+                let name = b.replace(/^remotes\/[^\/]+\//, '').replace(/^\* /, '').trim();
+                if (name && name !== 'HEAD') branches.add(name);
+            });
+
+            repoBranches.push({
+                path,
+                repoName,
+                branches: Array.from(branches)
+            });
+        } catch (error) {
+            console.error(`读取仓库 ${path} 分支失败:`, error);
+        }
     }
-    return Array.from(allBranches);
+    return repoBranches;
 }
 
 module.exports = {

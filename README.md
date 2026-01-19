@@ -75,7 +75,13 @@
 在 `backend` 目录下参考 `.env.example` 创建一个 `.env` 文件，并配置以下变量：
 
 ```env
+# 必填：DeepSeek API 密钥
 DEEPSEEK_API_KEY=your_api_key_here
+
+# 可选：基础仓库目录（配置后点击“添加仓库”将默认打开此目录，提高效率）
+BASE_REPO_DIR=D:\your\projects\path
+
+# 可选：服务器端口
 PORT=3001
 ```
 

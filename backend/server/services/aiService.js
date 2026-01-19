@@ -5,7 +5,7 @@ const { templates } = require('../constants/templates');
  * 组装 AI Prompt 并调用 API 生成日志
  */
 async function generateAILog(params) {
-    const { logs, templateKey, customPrompt, referenceLog, options, repoPaths, apiKey } = params;
+    const { logs, templateKey, customPrompt, tomorrowPlanPrompt, referenceLog, options, repoPaths, apiKey } = params;
 
     // 1. Prompt 基础模版
     let templatePrompt = '';
@@ -33,7 +33,11 @@ ${referenceLog}
             requirements.push("### 心得收获与技术感悟\n基于今日的代码变动，总结深层的技术思考、架构优化的意义或开发过程中的经验教训。列表从 1. 开始计数。");
         }
         if (options.includeTomorrow) {
-            requirements.push("### 明日计划\n根据今日工作进度，合理规划接下来的开发任务。列表从 1. 开始计数。");
+            let tomorrowReq = "### 明日计划\n根据今日工作进度，合理规划接下来的开发任务。列表从 1. 开始计数。";
+            if (tomorrowPlanPrompt) {
+                tomorrowReq += `\n**特别参考用户提供的明日计划关键词**：${tomorrowPlanPrompt}\n请基于这些关键词，结合今日的工作内容，生成更具体、更丰富的明日计划描述。`;
+            }
+            requirements.push(tomorrowReq);
         }
         
         if (requirements.length > 0) {
