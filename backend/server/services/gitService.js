@@ -99,13 +99,13 @@ async function getBranches(repoPaths) {
         try {
             const git = simpleGit(path);
             const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
-            const result = await git.branch(['-a']);
+            const result = await git.branch(); // 不传参数默认只获取本地分支
             const branches = new Set();
             
             result.all.forEach(b => {
-                // 清理分支名，去掉 remotes/origin/ 等前缀，只保留核心分支名
-                let name = b.replace(/^remotes\/[^\/]+\//, '').replace(/^\* /, '').trim();
-                if (name && name !== 'HEAD') branches.add(name);
+                // simpleGit.branch() 返回的 result.all 包含本地分支
+                let name = b.trim();
+                if (name && name !== 'HEAD' && !name.startsWith('remotes/')) branches.add(name);
             });
 
             repoBranches.push({
