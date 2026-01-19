@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle } from 'lucide-react';
+import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const SettingsModal = ({ 
   isOpen, 
@@ -131,9 +131,10 @@ const SettingsModal = ({
                 <ShieldCheck size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <button 
                   onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                  title={showKey ? "隐藏密钥" : "显示密钥"}
                 >
-                  {showKey ? <X size={16} /> : <Check size={16} className="text-transparent" />}
+                  {showKey ? <EyeOff size={16} className="text-blue-500" /> : <Eye size={16} />}
                 </button>
               </div>
               <button 

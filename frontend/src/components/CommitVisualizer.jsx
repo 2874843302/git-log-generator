@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Eye, EyeOff, GitMerge } from 'lucide-react';
+import { Eye, EyeOff, GitMerge, History, Activity } from 'lucide-react';
 
 const CommitVisualizer = ({ logs, chartData, ignoredHashes, toggleIgnore, ignoreMerges }) => {
   const isAllMergesIgnored = () => {
@@ -26,7 +26,7 @@ const CommitVisualizer = ({ logs, chartData, ignoredHashes, toggleIgnore, ignore
           <div className="flex items-end justify-between mt-2">
             <span className="text-2xl font-black text-gray-800 leading-none">{logs.length}</span>
             <div className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center">
-              <BarChart size={18} />
+              <History size={18} />
             </div>
           </div>
         </div>
@@ -96,7 +96,7 @@ const CommitVisualizer = ({ logs, chartData, ignoredHashes, toggleIgnore, ignore
             </ResponsiveContainer>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-2">
-              <BarChart size={32} />
+              <Activity size={32} />
               <span className="text-xs font-bold uppercase tracking-widest">No Data Available</span>
             </div>
           )}
