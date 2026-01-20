@@ -283,7 +283,7 @@ const ConfigPanel = ({
 
       <div className="pt-2 sticky bottom-0 bg-white">
         <button 
-          onClick={fetchLogs}
+          onClick={() => fetchLogs()}
           disabled={loading || repoPaths.length === 0}
           className="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-sm font-bold shadow-lg shadow-blue-500/20 active:scale-[0.98]"
         >

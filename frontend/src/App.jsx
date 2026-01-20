@@ -187,7 +187,10 @@ function App() {
   };
 
   const fetchLogs = async (customParams = null) => {
-    const params = customParams || {
+    // 检查是否传入了有效的自定义参数，避免将 React 事件对象误判为参数
+    const hasCustomParams = customParams && customParams.repoPaths;
+    
+    const params = hasCustomParams ? customParams : {
       repoPaths,
       startDate,
       endDate,
