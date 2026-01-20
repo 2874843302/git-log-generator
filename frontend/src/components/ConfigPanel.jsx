@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check, RefreshCw } from 'lucide-react';
+import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check, RefreshCw, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfigPanel = ({ 
@@ -20,11 +20,18 @@ const ConfigPanel = ({
   fetchLogs, 
   loading,
   openBranchPicker,
-  openSettings
+  openSettings,
+  openFoolMode,
+  apiKey,
+  baseDir,
+  defaultUser
 }) => {
 
   const [authorDropdownOpen, setAuthorDropdownOpen] = useState(false);
   const authorDropdownRef = useRef(null);
+
+  // 检查是否已完成所有关键全局配置 (API Key, 基础目录, 默认用户)
+  const isConfigComplete = apiKey && baseDir && defaultUser;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -42,6 +49,37 @@ const ConfigPanel = ({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
+      {/* 傻瓜模式入口 - 仅在配置完成后显示 */}
+      <AnimatePresence>
+        {isConfigComplete && (
+          <motion.section 
+            initial={{ opacity: 0, height: 0, mb: 0 }}
+            animate={{ opacity: 1, height: 'auto', mb: 24 }}
+            exit={{ opacity: 0, height: 0, mb: 0 }}
+            className="overflow-hidden"
+          >
+            <button
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  openFoolMode({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+                }}
+                className="w-full group relative flex items-center gap-3 p-4 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transition-all active:scale-[0.98] border border-white/10"
+              >
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
+                  <Zap size={40} className="text-white" />
+                </div>
+                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-md border border-white/30">
+                  <Zap size={18} className="text-white fill-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-black text-white tracking-tight">傻瓜模式</p>
+                  <p className="text-[9px] text-blue-100/80 font-bold uppercase">一键生成今日简报</p>
+                </div>
+              </button>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
       {/* 基础配置区 */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-1">

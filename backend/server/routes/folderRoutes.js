@@ -93,8 +93,45 @@ router.post('/config', (req, res) => {
 router.get('/config', (req, res) => {
     res.json({
         BASE_REPO_DIR: process.env.BASE_REPO_DIR || '',
-        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || ''
+        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
+        DEFAULT_USER: process.env.DEFAULT_USER || ''
     });
+});
+
+/**
+ * API: 列出基础目录下的所有 Git 仓库
+ * 用于“傻瓜模式”快速选择
+ */
+router.get('/git-repos', (req, res) => {
+    const baseDir = process.env.BASE_REPO_DIR;
+    if (!baseDir) {
+        return res.status(400).json({ error: '未配置基础工作目录，请先在设置中配置' });
+    }
+
+    try {
+        if (!fs.existsSync(baseDir)) {
+            return res.status(400).json({ error: '配置的基础目录不存在' });
+        }
+
+        const folders = fs.readdirSync(baseDir, { withFileTypes: true });
+        const gitRepos = folders
+            .filter(dirent => {
+                if (!dirent.isDirectory()) return false;
+                const fullPath = path.join(baseDir, dirent.name);
+                // 检查目录下是否存在 .git 文件夹
+                return fs.existsSync(path.join(fullPath, '.git'));
+            })
+            .map(dirent => ({
+                name: dirent.name,
+                path: path.join(baseDir, dirent.name).replace(/\\/g, '/')
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        res.json({ repos: gitRepos, baseDir });
+    } catch (error) {
+        console.error('列出 Git 仓库失败:', error);
+        res.status(500).json({ error: '读取基础目录失败: ' + error.message });
+    }
 });
 
 // API: 更新基础目录并写入 .env 文件

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User } from 'lucide-react';
 
 const SettingsModal = ({ 
   isOpen, 
@@ -9,19 +9,30 @@ const SettingsModal = ({
   updateBaseDir, 
   apiKey, 
   updateApiKey, 
+  defaultUser,
+  updateDefaultUser,
   initEnv,
   loading,
   originPos 
 }) => {
   const [localApiKey, setLocalApiKey] = useState(apiKey);
+  const [localDefaultUser, setLocalDefaultUser] = useState(defaultUser);
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     setLocalApiKey(apiKey);
   }, [apiKey]);
 
+  useEffect(() => {
+    setLocalDefaultUser(defaultUser);
+  }, [defaultUser]);
+
   const handleSaveKey = () => {
     updateApiKey(localApiKey);
+  };
+
+  const handleSaveUser = () => {
+    updateDefaultUser(localDefaultUser.toLowerCase().replace(/\s+/g, ''));
   };
 
   return (
@@ -113,7 +124,39 @@ const SettingsModal = ({
             </div>
           </section>
 
-          {/* 3. API 密钥 */}
+          {/* 3. 默认用户 */}
+                  <section className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                      <User size={14} />
+                      <span>默认用户 (拼音小写)</span>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <input 
+                          type="text"
+                          value={localDefaultUser}
+                          onChange={(e) => setLocalDefaultUser(e.target.value)}
+                          placeholder="例如: zhangsan"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono"
+                        />
+                        <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      </div>
+                      <button 
+                        onClick={handleSaveUser}
+                        disabled={localDefaultUser === defaultUser}
+                        className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                          localDefaultUser === defaultUser 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
+                        }`}
+                      >
+                        <Check size={16} />
+                        保存默认用户
+                      </button>
+                    </div>
+                  </section>
+
+                  {/* 4. API 密钥 */}
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
               <Key size={14} />

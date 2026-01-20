@@ -14,6 +14,7 @@ import BranchPickerModal from './components/BranchPickerModal';
 import TomorrowPlanModal from './components/TomorrowPlanModal';
 import TemplatePreviewModal from './components/TemplatePreviewModal';
 import SettingsModal from './components/SettingsModal';
+import FoolModeModal from './components/FoolModeModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
@@ -45,6 +46,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('config'); // viz, result
   const [baseDir, setBaseDir] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [defaultUser, setDefaultUser] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerPos, setBranchPickerPos] = useState({ x: '50%', y: '50%' });
@@ -55,11 +57,20 @@ function App() {
   const [templatePreviewPos, setTemplatePreviewPos] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsModalPos, setSettingsModalPos] = useState(null);
+  const [foolModeOpen, setFoolModeOpen] = useState(false);
+  const [foolModePos, setFoolModePos] = useState(null);
 
   useEffect(() => {
     fetchTemplates();
     fetchConfig();
   }, []);
+
+  // 当默认用户或作者列表变化时，自动选中默认用户
+  useEffect(() => {
+    if (defaultUser && authors.includes(defaultUser)) {
+      setSelectedAuthor(defaultUser);
+    }
+  }, [defaultUser, authors]);
 
   // API 调用逻辑
   const fetchConfig = async () => {
@@ -67,6 +78,7 @@ function App() {
       const res = await axios.get(`${API_BASE}/config`);
       if (res.data.BASE_REPO_DIR) setBaseDir(res.data.BASE_REPO_DIR);
       if (res.data.DEEPSEEK_API_KEY) setApiKey(res.data.DEEPSEEK_API_KEY);
+      if (res.data.DEFAULT_USER) setDefaultUser(res.data.DEFAULT_USER);
     } catch (err) {
       console.error('获取配置信息失败', err);
     }
@@ -90,6 +102,7 @@ function App() {
       await axios.post(`${API_BASE}/config`, { key, value });
       if (key === 'BASE_REPO_DIR') setBaseDir(value);
       if (key === 'DEEPSEEK_API_KEY') setApiKey(value);
+      if (key === 'DEFAULT_USER') setDefaultUser(value);
     } catch (err) {
       setError(`更新配置 ${key} 失败`);
     }
@@ -152,7 +165,13 @@ function App() {
   const fetchAuthors = async (paths) => {
     try {
       const res = await axios.post(`${API_BASE}/git-authors`, { repoPaths: paths });
-      setAuthors(res.data.authors);
+      const fetchedAuthors = res.data.authors;
+      setAuthors(fetchedAuthors);
+      
+      // 如果设置了默认用户，且在列表中存在，则自动选中
+      if (defaultUser && fetchedAuthors.includes(defaultUser)) {
+        setSelectedAuthor(defaultUser);
+      }
     } catch (err) {
       console.error('获取作者列表失败', err);
     }
@@ -167,8 +186,16 @@ function App() {
     }
   };
 
-  const fetchLogs = async () => {
-    if (repoPaths.length === 0) {
+  const fetchLogs = async (customParams = null) => {
+    const params = customParams || {
+      repoPaths,
+      startDate,
+      endDate,
+      author: selectedAuthor,
+      branches: selectedBranches
+    };
+
+    if (params.repoPaths.length === 0) {
       setError('请至少添加一个仓库路径');
       return;
     }
@@ -176,21 +203,18 @@ function App() {
     setError('');
     setIgnoredHashes(new Set());
     try {
-      const res = await axios.post(`${API_BASE}/git-logs`, {
-        repoPaths,
-        startDate,
-        endDate,
-        author: selectedAuthor,
-        branches: selectedBranches
-      });
+      const res = await axios.post(`${API_BASE}/git-logs`, params);
       setLogs(res.data.logs);
       if (res.data.logs.length > 0) {
         setActiveTab('viz');
+        return res.data.logs; // 返回 logs 供链式调用
       } else {
         setError('未找到指定条件下的提交记录');
+        return [];
       }
     } catch (err) {
       setError(err.response?.data?.error || '无法获取 Git 记录，请检查路径是否正确');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -246,21 +270,21 @@ function App() {
     });
   };
 
-  const generateLog = async () => {
+  const generateLog = async (customLogs = null, customTemplate = null, customRepoPaths = null) => {
     setLoading(true);
     setError('');
     try {
-      const filteredLogs = logs.filter(log => !ignoredHashes.has(log.hash));
-      if (filteredLogs.length === 0) {
+      const targetLogs = customLogs || logs.filter(log => !ignoredHashes.has(log.hash));
+      if (targetLogs.length === 0) {
         setError('没有可供生成的有效提交记录（所有记录已被忽略或未获取）');
         setLoading(false);
         return;
       }
 
       const res = await axios.post(`${API_BASE}/generate-log`, {
-        logs: filteredLogs,
-        repoPaths,
-        templateKey: selectedTemplate,
+        logs: targetLogs,
+        repoPaths: customRepoPaths || repoPaths,
+        templateKey: customTemplate || selectedTemplate,
         customPrompt: customPrompt,
         tomorrowPlanPrompt: tomorrowPlanPrompt,
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
@@ -272,6 +296,35 @@ function App() {
       setError(err.response?.data?.error || '生成日志失败，请检查 API 配置');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * 傻瓜模式一键生成逻辑
+   */
+  const handleFoolModeGenerate = async (selectedRepos) => {
+    setFoolModeOpen(false);
+    
+    // 1. 设置基础状态
+    const today = dayjs().format('YYYY-MM-DD');
+    setStartDate(today);
+    setEndDate(today);
+    setRepoPaths(selectedRepos);
+    setSelectedAuthor(defaultUser);
+    setSelectedTemplate('concise');
+
+    // 2. 获取日志
+    const fetchedLogs = await fetchLogs({
+      repoPaths: selectedRepos,
+      startDate: today,
+      endDate: today,
+      author: defaultUser,
+      branches: {} // 傻瓜模式默认不限分支
+    });
+
+    // 3. 如果有日志，直接生成极简报告
+    if (fetchedLogs && fetchedLogs.length > 0) {
+      await generateLog(fetchedLogs, 'concise', selectedRepos);
     }
   };
 
@@ -327,6 +380,13 @@ function App() {
               setSettingsModalOpen(true);
               setSettingsModalPos(pos);
             }}
+            openFoolMode={(pos) => {
+              setFoolModeOpen(true);
+              setFoolModePos(pos);
+            }}
+            apiKey={apiKey}
+            baseDir={baseDir}
+            defaultUser={defaultUser}
           />
 
           <LogGenerator 
@@ -490,19 +550,30 @@ function App() {
 
       <AnimatePresence>
         {settingsModalOpen && (
-          <SettingsModal 
-            isOpen={settingsModalOpen}
-            onClose={() => setSettingsModalOpen(false)}
-            baseDir={baseDir}
-            updateBaseDir={(e) => updateBaseDir(e)}
-            apiKey={apiKey}
-            updateApiKey={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
-            initEnv={initEnv}
-            loading={loading}
-            originPos={settingsModalPos}
-          />
-        )}
-      </AnimatePresence>
+            <SettingsModal 
+              isOpen={settingsModalOpen}
+              onClose={() => setSettingsModalOpen(false)}
+              baseDir={baseDir}
+              updateBaseDir={(e) => updateBaseDir(e)}
+              apiKey={apiKey}
+              updateApiKey={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
+              defaultUser={defaultUser}
+              updateDefaultUser={(val) => updateConfig('DEFAULT_USER', val)}
+              initEnv={initEnv}
+              loading={loading}
+              originPos={settingsModalPos}
+            />
+          )}
+
+          {foolModeOpen && (
+            <FoolModeModal 
+              isOpen={foolModeOpen}
+              onClose={() => setFoolModeOpen(false)}
+              onGenerate={handleFoolModeGenerate}
+              originPos={foolModePos}
+            />
+          )}
+        </AnimatePresence>
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
