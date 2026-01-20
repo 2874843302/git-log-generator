@@ -270,7 +270,7 @@ function App() {
     });
   };
 
-  const generateLog = async (customLogs = null, customTemplate = null, customRepoPaths = null) => {
+  const generateLog = async (customLogs = null, customTemplate = null, customRepoPaths = null, customOptions = null) => {
     setLoading(true);
     setError('');
     try {
@@ -288,7 +288,7 @@ function App() {
         customPrompt: customPrompt,
         tomorrowPlanPrompt: tomorrowPlanPrompt,
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
-        options: templateOptions
+        options: customOptions || templateOptions
       });
       setGeneratedLog(res.data.content);
       setActiveTab('result');
@@ -302,7 +302,7 @@ function App() {
   /**
    * 傻瓜模式一键生成逻辑
    */
-  const handleFoolModeGenerate = async (selectedRepos) => {
+  const handleFoolModeGenerate = async (selectedRepos, templateKey = 'concise') => {
     setFoolModeOpen(false);
     
     // 1. 设置基础状态
@@ -311,7 +311,7 @@ function App() {
     setEndDate(today);
     setRepoPaths(selectedRepos);
     setSelectedAuthor(defaultUser);
-    setSelectedTemplate('concise');
+    setSelectedTemplate(templateKey);
 
     // 2. 获取日志
     const fetchedLogs = await fetchLogs({
@@ -322,9 +322,15 @@ function App() {
       branches: {} // 傻瓜模式默认不限分支
     });
 
-    // 3. 如果有日志，直接生成极简报告
+    // 3. 如果有日志，根据指定的模版生成报告 (傻瓜模式禁用所有附加板块)
     if (fetchedLogs && fetchedLogs.length > 0) {
-      await generateLog(fetchedLogs, 'concise', selectedRepos);
+      const foolModeOptions = {
+        includeTomorrow: false,
+        includeReflections: false,
+        includeProblems: false,
+        includeDiffContent: false
+      };
+      await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
     }
   };
 

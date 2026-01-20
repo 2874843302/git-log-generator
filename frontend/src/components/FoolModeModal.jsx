@@ -178,19 +178,33 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
               </div>
 
               {/* 操作按钮 */}
-              <div className="pt-4">
-                <button
-                  disabled={selectedRepos.length === 0}
-                  onClick={() => onGenerate(selectedRepos)}
-                  className={`w-full py-5 rounded-2xl text-sm font-black flex items-center justify-center gap-3 transition-all active:scale-[0.98] ${
-                    selectedRepos.length === 0
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/30 hover:shadow-blue-500/40 hover:-translate-y-0.5'
-                  }`}
-                >
-                  <Zap size={20} className="fill-white" />
-                  立即生成今日极简日志
-                </button>
+              <div className="pt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    disabled={selectedRepos.length === 0}
+                    onClick={() => onGenerate(selectedRepos, 'concise')}
+                    className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                      selectedRepos.length === 0
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 shadow-lg shadow-blue-500/10'
+                    }`}
+                  >
+                    <Zap size={16} className="fill-blue-600" />
+                    立即生成极简日志
+                  </button>
+                  <button
+                    disabled={selectedRepos.length === 0}
+                    onClick={() => onGenerate(selectedRepos, 'daily')}
+                    className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                      selectedRepos.length === 0
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/30 hover:shadow-blue-500/40 hover:-translate-y-0.5'
+                    }`}
+                  >
+                    <Zap size={16} className="fill-white" />
+                    立即生成普通日报
+                  </button>
+                </div>
                 <p className="text-center text-[10px] text-gray-400 mt-4 font-medium">
                   点击后将自动：<span className="text-gray-600">设置今日日期</span> → <span className="text-gray-600">选中默认用户</span> → <span className="text-gray-600">提取代码变更</span> → <span className="text-gray-600">AI 生成报告</span>
                 </p>
