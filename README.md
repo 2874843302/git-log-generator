@@ -51,7 +51,7 @@ npm run dev
 - 后端服务：`http://localhost:3001`
 - 前端应用：`http://localhost:5173`
 
-## ⚙️ 环境配置 （可选，也可在前端页面点击一键配置环境系统会自动创建配置文件，并填写内容）
+## ⚙️ 环境配置
 
 ### 后端 (`backend/.env`)
 
@@ -66,14 +66,6 @@ BASE_REPO_DIR=D:\your\projects\path
 # 服务端口
 PORT=3001
 ```
-前端页面操作：
-
-![img_1.png](img_1.png)
-
-进入全局设置
-1. 点击 **立即初始化** 按钮
-2. 选择 **仓库根目录**
-3. 填写 **DeepSeek API 密钥**
 
 ## 🧰 技术栈
 

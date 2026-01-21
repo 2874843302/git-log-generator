@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Zap, Check, Loader2, AlertCircle, Github, Search } from 'lucide-react';
+import { X, Zap, Check, Loader2, AlertCircle, Github, Search, Calendar } from 'lucide-react';
 import axios from 'axios';
+import dayjs from 'dayjs';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
@@ -11,6 +12,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'));
 
   useEffect(() => {
     if (isOpen) {
@@ -65,7 +67,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
         animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
         exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100"
+        className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100"
       >
         {/* 顶部标题装饰 */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-8 text-white relative overflow-hidden">
@@ -119,19 +121,30 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* 搜索和统计 */}
+              {/* 搜索、日期和统计 */}
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full sm:w-72">
-                  <input 
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="搜索仓库名称..."
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-300 outline-none transition-all"
-                  />
-                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <div className="flex flex-1 gap-3 w-full sm:w-auto">
+                  <div className="relative flex-1">
+                    <input 
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="搜索仓库名称..."
+                      className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-300 outline-none transition-all"
+                    />
+                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  </div>
+                  <div className="relative w-40">
+                    <input 
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-300 outline-none transition-all appearance-none"
+                    />
+                    <Calendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs font-bold">
+                <div className="flex items-center gap-4 text-xs font-bold shrink-0">
                   <span className="text-gray-400">已选 <span className="text-blue-600">{selectedRepos.length}</span> / {repos.length}</span>
                   <button 
                     onClick={() => setSelectedRepos(selectedRepos.length === repos.length ? [] : repos.map(r => r.path))}
@@ -143,7 +156,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
               </div>
 
               {/* 仓库列表网格 */}
-              <div className="max-h-72 overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="max-h-72 overflow-y-auto custom-scrollbar px-2 py-2 -mx-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filteredRepos.map((repo) => (
                   <motion.div
                     key={repo.path}
@@ -182,7 +195,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     disabled={selectedRepos.length === 0}
-                    onClick={() => onGenerate(selectedRepos, 'concise')}
+                    onClick={() => onGenerate(selectedRepos, 'concise', selectedDate)}
                     className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                       selectedRepos.length === 0
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -194,7 +207,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
                   </button>
                   <button
                     disabled={selectedRepos.length === 0}
-                    onClick={() => onGenerate(selectedRepos, 'daily')}
+                    onClick={() => onGenerate(selectedRepos, 'daily', selectedDate)}
                     className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                       selectedRepos.length === 0
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'

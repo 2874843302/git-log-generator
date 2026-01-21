@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import dayjs from 'dayjs';
-import { Download, FileText, Copy, Check, Terminal } from 'lucide-react';
+import { Download, FileText, Copy, Check, Terminal, Share2, Loader2 } from 'lucide-react';
 
-const MarkdownPreview = ({ generatedLog }) => {
+const MarkdownPreview = ({ generatedLog, onSyncToXuexitong }) => {
   const [copied, setCopied] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   // 清除 Markdown 格式的函数
   const stripMarkdown = (md) => {
@@ -42,6 +43,17 @@ const MarkdownPreview = ({ generatedLog }) => {
     a.download = `work-log-${dayjs().format('YYYY-MM-DD')}.md`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSync = async () => {
+    if (!generatedLog || syncing || !onSyncToXuexitong) return;
+    setSyncing(true);
+    try {
+      const plainText = stripMarkdown(generatedLog);
+      await onSyncToXuexitong(plainText);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   return (
@@ -90,10 +102,19 @@ const MarkdownPreview = ({ generatedLog }) => {
               </div>
               <button 
                 onClick={handleDownload}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-all active:scale-95 border border-indigo-100"
               >
                 <Download size={14} />
                 下载报告
+              </button>
+
+              <button 
+                onClick={handleSync}
+                disabled={syncing}
+                className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {syncing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                {syncing ? '同步中...' : '同步到学习通'}
               </button>
             </>
           )}

@@ -31,7 +31,7 @@ ${referenceLog}
         const isKpi = templateKey === 'kpi';
         const periodText = isWeekly ? "本周" : (isKpi ? "考核期内" : "今日");
         
-        let mainTitle = `### ${periodText}完成工作（基于 Git 记录）`;
+        let mainTitle = `### ${periodText}完成工作`;
         if (isKpi) mainTitle = `### 核心业务价值产出`;
         
         const conciseSuffix = isConcise ? "（语言必须极度精简，每条不超过30字）" : "";
@@ -88,7 +88,7 @@ ${referenceLog}
         messages: [
             { 
                 role: 'system', 
-                content: '你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下，用专业的行业术语进行润色和总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。**请注意：直接输出报告的 Markdown 内容，不要包含任何如“好的”、“这是为您生成的报告”之类的开场白、寒暄或总结性陈述。**' 
+                content: '你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下，用专业的行业术语进行润色和总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。**请注意：直接输出报告的 Markdown 内容，不要包含任何如“好的”、“这是为您生成的报告”之类的开场白、寒暄或总结性陈述。同时，严禁在生成的内容中出现“基于 Git 记录”、“根据提交信息”等说明性冗余字样，直接展示工作成果。**' 
             },
             { role: 'user', content: prompt }
         ],

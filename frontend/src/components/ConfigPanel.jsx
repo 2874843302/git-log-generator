@@ -30,8 +30,8 @@ const ConfigPanel = ({
   const [authorDropdownOpen, setAuthorDropdownOpen] = useState(false);
   const authorDropdownRef = useRef(null);
 
-  // 检查是否已完成所有关键全局配置 (API Key, 基础目录, 默认用户)
-  const isConfigComplete = apiKey && baseDir && defaultUser;
+  // 检查是否已完成关键全局配置 (API Key, 基础目录)
+  const isConfigComplete = apiKey && baseDir;
 
   useEffect(() => {
     const handleClickOutside = (event) => {

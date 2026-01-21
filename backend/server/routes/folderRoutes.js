@@ -89,13 +89,39 @@ router.post('/config', (req, res) => {
     }
 });
 
-// API: 获取配置信息 (安全过滤敏感信息)
+// API: 获取配置信息 (优先从 .env 文件读取，确保实时性)
 router.get('/config', (req, res) => {
-    res.json({
-        BASE_REPO_DIR: process.env.BASE_REPO_DIR || '',
-        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
-        DEFAULT_USER: process.env.DEFAULT_USER || ''
-    });
+    try {
+        const envPath = path.join(__dirname, '../../.env');
+        let envConfig = {};
+        
+        if (fs.existsSync(envPath)) {
+            const content = fs.readFileSync(envPath, 'utf8');
+            content.split('\n').forEach(line => {
+                const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+                if (match) {
+                    const key = match[1];
+                    let value = match[2] || '';
+                    // 去除可能的引号
+                    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+                    if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+                    envConfig[key] = value.trim();
+                }
+            });
+        }
+
+        res.json({
+            BASE_REPO_DIR: envConfig.BASE_REPO_DIR || process.env.BASE_REPO_DIR || '',
+            DEEPSEEK_API_KEY: envConfig.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY || '',
+            DEFAULT_USER: envConfig.DEFAULT_USER || process.env.DEFAULT_USER || '',
+            XUEXITONG_NOTE_URL: envConfig.XUEXITONG_NOTE_URL || process.env.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index',
+            XUEXITONG_USERNAME: envConfig.XUEXITONG_USERNAME || process.env.XUEXITONG_USERNAME || '',
+            XUEXITONG_PASSWORD: envConfig.XUEXITONG_PASSWORD || process.env.XUEXITONG_PASSWORD || ''
+        });
+    } catch (error) {
+        console.error('读取配置失败:', error);
+        res.status(500).json({ error: '读取配置失败' });
+    }
 });
 
 /**

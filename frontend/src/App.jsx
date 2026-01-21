@@ -47,6 +47,9 @@ function App() {
   const [baseDir, setBaseDir] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [defaultUser, setDefaultUser] = useState('');
+  const [xuexitongUrl, setXuexitongUrl] = useState('https://note.chaoxing.com/pc/index');
+  const [xuexitongUsername, setXuexitongUsername] = useState('');
+  const [xuexitongPassword, setXuexitongPassword] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerPos, setBranchPickerPos] = useState({ x: '50%', y: '50%' });
@@ -76,9 +79,13 @@ function App() {
   const fetchConfig = async () => {
     try {
       const res = await axios.get(`${API_BASE}/config`);
-      if (res.data.BASE_REPO_DIR) setBaseDir(res.data.BASE_REPO_DIR);
-      if (res.data.DEEPSEEK_API_KEY) setApiKey(res.data.DEEPSEEK_API_KEY);
-      if (res.data.DEFAULT_USER) setDefaultUser(res.data.DEFAULT_USER);
+      // 无论是否有值都进行设置，确保与文件同步
+      setBaseDir(res.data.BASE_REPO_DIR || '');
+      setApiKey(res.data.DEEPSEEK_API_KEY || '');
+      setDefaultUser(res.data.DEFAULT_USER || '');
+      setXuexitongUrl(res.data.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
+      setXuexitongUsername(res.data.XUEXITONG_USERNAME || '');
+      setXuexitongPassword(res.data.XUEXITONG_PASSWORD || '');
     } catch (err) {
       console.error('获取配置信息失败', err);
     }
@@ -103,6 +110,9 @@ function App() {
       if (key === 'BASE_REPO_DIR') setBaseDir(value);
       if (key === 'DEEPSEEK_API_KEY') setApiKey(value);
       if (key === 'DEFAULT_USER') setDefaultUser(value);
+      if (key === 'XUEXITONG_NOTE_URL') setXuexitongUrl(value);
+      if (key === 'XUEXITONG_USERNAME') setXuexitongUsername(value);
+      if (key === 'XUEXITONG_PASSWORD') setXuexitongPassword(value);
     } catch (err) {
       setError(`更新配置 ${key} 失败`);
     }
@@ -305,11 +315,11 @@ function App() {
   /**
    * 傻瓜模式一键生成逻辑
    */
-  const handleFoolModeGenerate = async (selectedRepos, templateKey = 'concise') => {
+  const handleFoolModeGenerate = async (selectedRepos, templateKey = 'concise', targetDate = null) => {
     setFoolModeOpen(false);
     
     // 1. 设置基础状态
-    const today = dayjs().format('YYYY-MM-DD');
+    const today = targetDate || dayjs().format('YYYY-MM-DD');
     setStartDate(today);
     setEndDate(today);
     setRepoPaths(selectedRepos);
@@ -334,6 +344,25 @@ function App() {
         includeDiffContent: false
       };
       await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
+    }
+  };
+
+  /**
+   * 同步笔记到学习通
+   */
+  const handleSyncToXuexitong = async (content) => {
+    try {
+      const res = await axios.post(`${API_BASE}/create-note`, {
+        content,
+        title: `工作日志 ${dayjs().format('YYYY-MM-DD')}`
+      });
+      if (res.data.success) {
+        alert('同步成功！笔记已保存到学习通。');
+      }
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || '同步失败，请检查后端服务和学习通配置';
+      alert(errorMsg);
+      console.error('Sync Error:', err);
     }
   };
 
@@ -426,7 +455,7 @@ function App() {
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
-            <span>Version 1.2.0</span>
+            <span>Version 2.0.0</span>
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
               API Connected
@@ -500,7 +529,10 @@ function App() {
 
             {activeTab === 'result' && (
               <div className="animate-in fade-in zoom-in-95 duration-500">
-                <MarkdownPreview generatedLog={generatedLog} />
+                <MarkdownPreview 
+                  generatedLog={generatedLog} 
+                  onSyncToXuexitong={handleSyncToXuexitong}
+                />
               </div>
             )}
           </div>
@@ -568,6 +600,12 @@ function App() {
               updateApiKey={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
               defaultUser={defaultUser}
               updateDefaultUser={(val) => updateConfig('DEFAULT_USER', val)}
+              xuexitongUrl={xuexitongUrl}
+              updateXuexitongUrl={(val) => updateConfig('XUEXITONG_NOTE_URL', val)}
+              xuexitongUsername={xuexitongUsername}
+              updateXuexitongUsername={(val) => updateConfig('XUEXITONG_USERNAME', val)}
+              xuexitongPassword={xuexitongPassword}
+              updateXuexitongPassword={(val) => updateConfig('XUEXITONG_PASSWORD', val)}
               initEnv={initEnv}
               loading={loading}
               originPos={settingsModalPos}

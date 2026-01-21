@@ -1,6 +1,6 @@
 {
   "name": "git-log-generator",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -19,6 +19,7 @@
     "dayjs": "^1.11.19",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "playwright": "^1.57.0",
     "simple-git": "^3.30.0"
   },
   "devDependencies": {
