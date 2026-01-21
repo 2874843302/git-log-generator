@@ -67,7 +67,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
         animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
         exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100"
+        className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100"
       >
         {/* 顶部标题装饰 */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-8 text-white relative overflow-hidden">

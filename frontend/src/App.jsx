@@ -354,7 +354,7 @@ function App() {
     try {
       const res = await axios.post(`${API_BASE}/create-note`, {
         content,
-        title: `工作日志 ${dayjs().format('YYYY-MM-DD')}`
+        title: `工作日志 ${endDate}`
       });
       if (res.data.success) {
         alert('同步成功！笔记已保存到学习通。');
