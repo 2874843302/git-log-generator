@@ -515,7 +515,7 @@ function App() {
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
-            <span>Version 2.0.0</span>
+            <span>Version 2.0.2</span>
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
               API Connected
