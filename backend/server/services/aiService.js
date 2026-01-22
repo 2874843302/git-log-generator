@@ -1,11 +1,16 @@
-const axios = require('axios');
 const { templates } = require('../constants/templates');
 
 /**
  * 组装 AI Prompt 并调用 API 生成日志
  */
 async function generateAILog(params) {
-    const { logs, templateKey, customPrompt, tomorrowPlanPrompt, referenceLog, options, repoPaths, apiKey } = params;
+    const { logs, templateKey, customPrompt, tomorrowPlanPrompt, referenceLog, options, repoPaths } = params;
+    // 优先使用传入的 apiKey，否则从环境变量获取
+    const apiKey = params.apiKey || process.env.DEEPSEEK_API_KEY;
+
+    if (!apiKey) {
+        throw new Error('未检测到 DeepSeek API Key，请在设置中配置后再试');
+    }
 
     // 1. Prompt 基础模版
     let templatePrompt = '';
@@ -83,24 +88,57 @@ ${referenceLog}
     const prompt = `${templatePrompt}${customPrompt ? `\n附加要求：${customPrompt}` : ''}\n\n以下是来自多个项目的提交记录详情。请注意：在生成日志时，**必须为每个项目使用独立的二级或三级标题（如 ### 项目名）来突出显示**，并在此标题下汇总该项目的内容：\n${logs.map(l => `- [项目:${l.repoName}] ${l.date} [${l.author_name}]: ${l.message}\n  [变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`).join('\n')}`;
 
     // 3. 调用 API
-    const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-        model: 'deepseek-chat',
-        messages: [
-            { 
-                role: 'system', 
-                content: '你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下，用专业的行业术语进行润色和总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。**请注意：直接输出报告的 Markdown 内容，不要包含任何如“好的”、“这是为您生成的报告”之类的开场白、寒暄或总结性陈述。同时，严禁在生成的内容中出现“基于 Git 记录”、“根据提交信息”等说明性冗余字样，直接展示工作成果。**' 
+    try {
+        console.log('正在调用 DeepSeek API...', { model: 'deepseek-chat', logCount: logs.length });
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
             },
-            { role: 'user', content: prompt }
-        ],
-        stream: false
-    }, {
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-        }
-    });
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: [
+                    { 
+                        role: 'system', 
+                        content: '你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下，用专业的行业术语进行润色和总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。**请注意：直接输出报告的 Markdown 内容，不要包含任何如“好的”、“这是为您生成的报告”之类的开场白、寒暄或总结性陈述。同时，严禁在生成的内容中出现“基于 Git 记录”、“根据提交信息”等说明性冗余字样，直接展示工作成果。**' 
+                    },
+                    { role: 'user', content: prompt }
+                ],
+                stream: false
+            })
+        });
 
-    return response.data.choices[0].message.content;
+        if (!response.ok) {
+            console.error('DeepSeek API 响应错误:', response.status, response.statusText);
+            let errorMsg = `HTTP Error ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error?.message || errorMsg;
+            } catch (e) {
+                try {
+                    const text = await response.text();
+                    errorMsg = text.substring(0, 100) || errorMsg;
+                } catch (e2) {}
+            }
+            throw new Error(`AI 服务调用失败: ${errorMsg}`);
+        }
+
+        const data = await response.json();
+        console.log('DeepSeek API 原始响应:', JSON.stringify(data, null, 2));
+        
+        if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
+            console.error('AI 响应结构异常:', data);
+            throw new Error('AI 返回数据格式错误，请检查 API 状态');
+        }
+
+        const content = data.choices[0].message.content;
+        console.log('AI 生成成功，内容长度:', content?.length);
+        return { content: content || '' };
+    } catch (error) {
+        console.error('AI Service 捕获到异常:', error);
+        throw error;
+    }
 }
 
 module.exports = {

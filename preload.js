@@ -3,9 +3,20 @@ const { contextBridge, ipcRenderer } = require('electron');
 // 暴露安全的 API 到渲染进程
 contextBridge.exposeInMainWorld('electron', {
     /**
-     * 发送消息到主进程
-     * @param {string} channel 频道名称
-     * @param {any} data 数据
+     * 调用主进程定义的 IPC 处理函数 (返回 Promise)
+     * @param {string} channel 频道名称 (例如 'api:getConfig')
+     * @param {any} data 传递给处理函数的数据
+     */
+    invoke: (channel, data) => {
+        // 允许以 'api:' 开头的频道
+        if (channel.startsWith('api:')) {
+            return ipcRenderer.invoke(channel, data);
+        }
+        return Promise.reject(new Error(`非法 IPC 频道: ${channel}`));
+    },
+    
+    /**
+     * 发送异步消息到主进程
      */
     send: (channel, data) => {
         const validChannels = ['toMain'];
@@ -13,10 +24,9 @@ contextBridge.exposeInMainWorld('electron', {
             ipcRenderer.send(channel, data);
         }
     },
+    
     /**
      * 接收来自主进程的消息
-     * @param {string} channel 频道名称
-     * @param {function} func 回调函数
      */
     receive: (channel, func) => {
         const validChannels = ['fromMain'];

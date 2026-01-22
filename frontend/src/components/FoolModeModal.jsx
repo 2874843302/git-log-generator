@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Zap, Check, Loader2, AlertCircle, Github, Search, Calendar } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 import dayjs from 'dayjs';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
 const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
   const [repos, setRepos] = useState([]);
@@ -13,6 +11,11 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'));
+  const [options, setOptions] = useState({
+    includeProblems: true,
+    includeReflections: true,
+    includeDiffContent: true
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -24,12 +27,32 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_BASE}/git-repos`);
-      setRepos(res.data.repos);
+      // 傻瓜模式下我们可能需要先获取配置中的基础路径，然后列出该路径下的所有文件夹作为潜在仓库
+      // 这里简化逻辑：我们假设 App 已经传递了仓库列表，或者我们需要一个新的 API 来获取“所有已发现的仓库”
+      // 但实际上之前的代码是调用 /git-repos，这个接口似乎我刚才在 api.js 里没有特别仔细看，
+      // 让我们回顾一下 api.js 的 routeMap: 'git-repos': 'api:listDir'
+      // 看起来之前的 git-repos 实际上是 listDir，这可能不太对，因为 listDir 是列出目录
+      // 如果后端有专门的 getRepos 逻辑，应该用那个。
+      // 但根据之前的代码，它似乎就是列出 baseDir 下的文件夹。
+      
+      // 我们先获取配置拿到 baseDir
+      const config = await api.getConfig();
+      if (!config.BASE_REPO_DIR) {
+        throw new Error('未配置基础仓库目录');
+      }
+      
+      const res = await api.listDir(config.BASE_REPO_DIR);
+      // 构造 repos 对象列表
+      const repos = res.folders.map(name => ({
+        name,
+        path: `${res.currentPath}/${name}` // 注意路径分隔符，这里简单处理
+      }));
+      
+      setRepos(repos);
       // 默认全选
-      setSelectedRepos(res.data.repos.map(r => r.path));
+      setSelectedRepos(repos.map(r => r.path));
     } catch (err) {
-      setError(err.response?.data?.error || '无法获取仓库列表，请检查基础目录配置');
+      setError(err.message || '无法获取仓库列表，请检查基础目录配置');
     } finally {
       setLoading(false);
     }
@@ -156,7 +179,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
               </div>
 
               {/* 仓库列表网格 */}
-              <div className="max-h-72 overflow-y-auto custom-scrollbar px-2 py-2 -mx-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="max-h-60 overflow-y-auto custom-scrollbar px-2 py-2 -mx-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filteredRepos.map((repo) => (
                   <motion.div
                     key={repo.path}
@@ -190,12 +213,58 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
                 ))}
               </div>
 
+              {/* 附加选项 */}
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Zap size={10} className="text-blue-500" />
+                  智能生成选项
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className="relative flex items-center justify-center">
+                      <input 
+                        type="checkbox"
+                        checked={options.includeProblems}
+                        onChange={(e) => setOptions({ ...options, includeProblems: e.target.checked })}
+                        className="peer appearance-none w-5 h-5 border-2 border-gray-200 rounded-lg checked:border-blue-500 checked:bg-blue-500 transition-all"
+                      />
+                      <Check size={12} className="absolute text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
+                    </div>
+                    <span className="text-xs font-bold text-gray-600 group-hover:text-blue-600 transition-colors">遇到的问题</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className="relative flex items-center justify-center">
+                      <input 
+                        type="checkbox"
+                        checked={options.includeReflections}
+                        onChange={(e) => setOptions({ ...options, includeReflections: e.target.checked })}
+                        className="peer appearance-none w-5 h-5 border-2 border-gray-200 rounded-lg checked:border-blue-500 checked:bg-blue-500 transition-all"
+                      />
+                      <Check size={12} className="absolute text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
+                    </div>
+                    <span className="text-xs font-bold text-gray-600 group-hover:text-blue-600 transition-colors">心得收获</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className="relative flex items-center justify-center">
+                      <input 
+                        type="checkbox"
+                        checked={options.includeDiffContent}
+                        onChange={(e) => setOptions({ ...options, includeDiffContent: e.target.checked })}
+                        className="peer appearance-none w-5 h-5 border-2 border-gray-200 rounded-lg checked:border-blue-500 checked:bg-blue-500 transition-all"
+                      />
+                      <Check size={12} className="absolute text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
+                    </div>
+                    <span className="text-xs font-bold text-gray-600 group-hover:text-blue-600 transition-colors">深度代码分析</span>
+                  </label>
+                </div>
+              </div>
+
               {/* 操作按钮 */}
-              <div className="pt-4 space-y-3">
+              <div className="pt-2 space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     disabled={selectedRepos.length === 0}
-                    onClick={() => onGenerate(selectedRepos, 'concise', selectedDate)}
+                    onClick={() => onGenerate(selectedRepos, 'concise', selectedDate, options)}
                     className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                       selectedRepos.length === 0
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -207,7 +276,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
                   </button>
                   <button
                     disabled={selectedRepos.length === 0}
-                    onClick={() => onGenerate(selectedRepos, 'daily', selectedDate)}
+                    onClick={() => onGenerate(selectedRepos, 'daily', selectedDate, options)}
                     className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                       selectedRepos.length === 0
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'

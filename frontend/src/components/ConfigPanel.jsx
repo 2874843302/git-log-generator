@@ -163,7 +163,7 @@ const ConfigPanel = ({
             </div>
           </div>
 
-          {authors.length > 0 && (
+          {authors && authors.length > 0 && (
             <div className="animate-in fade-in slide-in-from-top-1" ref={authorDropdownRef}>
               <label className="text-[10px] font-bold text-gray-400 mb-1.5 block uppercase tracking-wider">分析作者</label>
               <div className="relative">
@@ -230,7 +230,7 @@ const ConfigPanel = ({
             </div>
           )}
 
-          {branches.length > 0 && (
+          {branches && branches.length > 0 && (
             <div className="space-y-3">
               <label className="text-[10px] font-bold text-gray-400 block border-b border-gray-100 pb-1 uppercase">
                 分支配置

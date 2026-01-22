@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from './services/api';
 import dayjs from 'dayjs';
 import { GitCommit, AlertCircle } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
@@ -15,8 +15,6 @@ import TomorrowPlanModal from './components/TomorrowPlanModal';
 import TemplatePreviewModal from './components/TemplatePreviewModal';
 import SettingsModal from './components/SettingsModal';
 import FoolModeModal from './components/FoolModeModal';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
 function App() {
   // 状态管理
@@ -78,14 +76,14 @@ function App() {
   // API 调用逻辑
   const fetchConfig = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/config`);
+      const res = await api.getConfig();
       // 无论是否有值都进行设置，确保与文件同步
-      setBaseDir(res.data.BASE_REPO_DIR || '');
-      setApiKey(res.data.DEEPSEEK_API_KEY || '');
-      setDefaultUser(res.data.DEFAULT_USER || '');
-      setXuexitongUrl(res.data.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
-      setXuexitongUsername(res.data.XUEXITONG_USERNAME || '');
-      setXuexitongPassword(res.data.XUEXITONG_PASSWORD || '');
+      setBaseDir(res.BASE_REPO_DIR || '');
+      setApiKey(res.DEEPSEEK_API_KEY || '');
+      setDefaultUser(res.DEFAULT_USER || '');
+      setXuexitongUrl(res.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
+      setXuexitongUsername(res.XUEXITONG_USERNAME || '');
+      setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
     } catch (err) {
       console.error('获取配置信息失败', err);
     }
@@ -94,11 +92,15 @@ function App() {
   const initEnv = async () => {
     try {
       setLoading(true);
-      const res = await axios.post(`${API_BASE}/init-env`);
-      alert(res.data.message + '\n' + res.data.details.join('\n'));
+      const res = await api.initEnv();
+      if (res.success) {
+        alert('环境初始化成功');
+      } else {
+        alert(res.message);
+      }
       fetchConfig(); // 重新加载配置
     } catch (err) {
-      setError(err.response?.data?.message || '初始化环境失败');
+      setError(err.message || '初始化环境失败');
     } finally {
       setLoading(false);
     }
@@ -106,7 +108,7 @@ function App() {
 
   const updateConfig = async (key, value) => {
     try {
-      await axios.post(`${API_BASE}/config`, { key, value });
+      await api.updateConfig({ [key]: value });
       if (key === 'BASE_REPO_DIR') setBaseDir(value);
       if (key === 'DEEPSEEK_API_KEY') setApiKey(value);
       if (key === 'DEFAULT_USER') setDefaultUser(value);
@@ -146,8 +148,8 @@ function App() {
 
   const fetchTemplates = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/templates`);
-      setTemplates(res.data);
+      const res = await api.getTemplates();
+      setTemplates(res);
     } catch (err) {
       console.error('获取模版失败', err);
     }
@@ -174,8 +176,8 @@ function App() {
 
   const fetchAuthors = async (paths) => {
     try {
-      const res = await axios.post(`${API_BASE}/git-authors`, { repoPaths: paths });
-      const fetchedAuthors = res.data.authors;
+      const res = await api.getGitAuthors(paths);
+      const fetchedAuthors = res?.authors || [];
       setAuthors(fetchedAuthors);
       
       // 如果设置了默认用户，且在列表中存在，则自动选中
@@ -184,15 +186,17 @@ function App() {
       }
     } catch (err) {
       console.error('获取作者列表失败', err);
+      setAuthors([]);
     }
   };
 
   const fetchBranches = async (paths) => {
     try {
-      const res = await axios.post(`${API_BASE}/git-branches`, { repoPaths: paths });
-      setBranches(res.data.branches);
+      const res = await api.getGitBranches(paths);
+      setBranches(res?.branches || []);
     } catch (err) {
       console.error('获取分支列表失败', err);
+      setBranches([]);
     }
   };
 
@@ -216,17 +220,17 @@ function App() {
     setError('');
     setIgnoredHashes(new Set());
     try {
-      const res = await axios.post(`${API_BASE}/git-logs`, params);
-      setLogs(res.data.logs);
-      if (res.data.logs.length > 0) {
+      const res = await api.getGitLogs(params);
+      setLogs(res.logs);
+      if (res.logs.length > 0) {
         setActiveTab('viz');
-        return res.data.logs; // 返回 logs 供链式调用
+        return res.logs; // 返回 logs 供链式调用
       } else {
         setError('未找到指定条件下的提交记录');
         return [];
       }
     } catch (err) {
-      setError(err.response?.data?.error || '无法获取 Git 记录，请检查路径是否正确');
+      setError(err.message || '无法获取 Git 记录，请检查路径是否正确');
       return [];
     } finally {
       setLoading(false);
@@ -284,29 +288,49 @@ function App() {
   };
 
   const generateLog = async (customLogs = null, customTemplate = null, customRepoPaths = null, customOptions = null) => {
+    // 检查参数是否为 React 事件对象
+    const isEvent = customLogs && customLogs.nativeEvent;
+    const actualLogs = isEvent ? null : customLogs;
+
     setLoading(true);
     setError('');
     try {
-      const targetLogs = customLogs || logs.filter(log => !ignoredHashes.has(log.hash));
+      const targetLogs = actualLogs || logs.filter(log => !ignoredHashes.has(log.hash));
       if (targetLogs.length === 0) {
         setError('没有可供生成的有效提交记录（所有记录已被忽略或未获取）');
         setLoading(false);
         return;
       }
 
-      const res = await axios.post(`${API_BASE}/generate-log`, {
+      console.log('开始请求 AI 生成，参数:', {
+        logsCount: targetLogs.length,
+        template: customTemplate || selectedTemplate,
+        apiKeyPresent: !!apiKey
+      });
+
+      const res = await api.generateAiLog({
         logs: targetLogs,
         repoPaths: customRepoPaths || repoPaths,
         templateKey: customTemplate || selectedTemplate,
         customPrompt: customPrompt,
         tomorrowPlanPrompt: tomorrowPlanPrompt,
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
-        options: customOptions || templateOptions
+        options: customOptions || templateOptions,
+        apiKey: apiKey // 确保传递 API Key
       });
-      setGeneratedLog(res.data.content);
-      setActiveTab('result');
+      
+      console.log('AI 生成返回结果:', res);
+
+      if (res && res.content) {
+        setGeneratedLog(res.content);
+        setActiveTab('result');
+      } else {
+        console.warn('AI 返回内容为空:', res);
+        setError('AI 未能生成有效内容，请稍后再试');
+      }
     } catch (err) {
-      setError(err.response?.data?.error || '生成日志失败，请检查 API 配置');
+      console.error('generateLog 捕获到错误:', err);
+      setError(err.message || '生成日志失败，请检查 API 配置');
     } finally {
       setLoading(false);
     }
@@ -315,7 +339,7 @@ function App() {
   /**
    * 傻瓜模式一键生成逻辑
    */
-  const handleFoolModeGenerate = async (selectedRepos, templateKey = 'concise', targetDate = null) => {
+  const handleFoolModeGenerate = async (selectedRepos, templateKey = 'concise', targetDate = null, customOptions = null) => {
     setFoolModeOpen(false);
     
     // 1. 设置基础状态
@@ -335,9 +359,11 @@ function App() {
       branches: {} // 傻瓜模式默认不限分支
     });
 
-    // 3. 如果有日志，根据指定的模版生成报告 (傻瓜模式禁用所有附加板块)
+    // 3. 如果有日志，根据指定的模版生成报告
     if (fetchedLogs && fetchedLogs.length > 0) {
-      const foolModeOptions = {
+      // 如果没有传 customOptions，则默认不开启任何板块（保持之前逻辑）
+      // 但实际上 FoolModeModal 已经传了默认开启的 options
+      const foolModeOptions = customOptions || {
         includeTomorrow: false,
         includeReflections: false,
         includeProblems: false,
@@ -352,15 +378,15 @@ function App() {
    */
   const handleSyncToXuexitong = async (content) => {
     try {
-      const res = await axios.post(`${API_BASE}/create-note`, {
+      const res = await api.createXuexitongNote({
         content,
         title: `工作日志 ${endDate}`
       });
-      if (res.data.success) {
+      if (res.success) {
         alert('同步成功！笔记已保存到学习通。');
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.error || '同步失败，请检查后端服务和学习通配置';
+      const errorMsg = err.message || '同步失败，请检查学习通配置';
       alert(errorMsg);
       console.error('Sync Error:', err);
     }
@@ -622,7 +648,7 @@ function App() {
           )}
         </AnimatePresence>
 
-      <style jsx global>{`
+      <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }

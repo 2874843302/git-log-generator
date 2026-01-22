@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import { Folder, ChevronLeft, HardDrive, Check, X, Search, AlertCircle, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
 const FolderPickerModal = ({ 
   isOpen, 
@@ -37,22 +35,26 @@ const FolderPickerModal = ({
 
   const fetchDrives = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/drives`);
-      setDrives(res.data.drives);
+      const res = await api.getDrives();
+      setDrives(res.drives);
     } catch (err) {
       console.error('获取盘符失败');
     }
   };
 
   const fetchDir = async (path) => {
+    // 处理 Windows 根目录情况，如果路径为空则获取盘符列表
+    if (!path && process.platform === 'win32') {
+      fetchDrives();
+    }
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_BASE}/list-dir`, { params: { path } });
-      setCurrentPath(res.data.currentPath);
-      setFolders(res.data.folders);
+      const res = await api.listDir(path);
+      setCurrentPath(res.currentPath);
+      setFolders(res.folders);
     } catch (err) {
-      setError(err.response?.data?.error || '无法读取目录');
+      setError(err.message || '无法读取目录');
     } finally {
       setLoading(false);
     }
@@ -148,8 +150,17 @@ const FolderPickerModal = ({
         {/* Search & Navigation */}
         <div className="px-6 py-4 border-b border-gray-100 flex gap-3 bg-white shrink-0">
           <button 
-            onClick={() => fetchDir(currentPath.split(/[/\\]/).slice(0, -2).join('/') + '/')}
-            className="w-10 h-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-xl text-gray-600 transition-all active:scale-95 border border-gray-100"
+            onClick={() => {
+              const parts = currentPath.split(/[/\\]/).filter(Boolean);
+              if (parts.length <= 1) {
+                // 如果已经在根目录（如 D:），则不做操作或返回盘符列表
+                return;
+              }
+              const newPath = parts.slice(0, -1).join('/') + '/';
+              fetchDir(newPath);
+            }}
+            disabled={currentPath.split(/[/\\]/).filter(Boolean).length <= 1}
+            className="w-10 h-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-xl text-gray-600 transition-all active:scale-95 border border-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
             title="返回上级"
           >
             <ChevronLeft size={20} />
@@ -198,7 +209,11 @@ const FolderPickerModal = ({
                 <h4 className="text-sm font-black uppercase mb-1">访问受限</h4>
                 <p className="text-xs font-medium leading-relaxed opacity-80 mb-6">{error}</p>
                 <button 
-                  onClick={() => fetchDir(currentPath.split(/[/\\]/).slice(0, -2).join('/') + '/')}
+                  onClick={() => {
+                    const parts = currentPath.split(/[/\\]/).filter(Boolean);
+                    if (parts.length <= 1) return;
+                    fetchDir(parts.slice(0, -1).join('/') + '/');
+                  }}
                   className="px-6 py-2 bg-red-100 text-red-600 rounded-xl text-xs font-bold hover:bg-red-200 transition-all"
                 >
                   返回上级目录
@@ -209,7 +224,10 @@ const FolderPickerModal = ({
                 {filteredFolders.map(folder => (
                   <button
                     key={folder}
-                    onDoubleClick={() => fetchDir(currentPath + folder + '/')}
+                    onDoubleClick={() => {
+                      const separator = currentPath.endsWith('/') || currentPath.endsWith('\\') ? '' : '/';
+                      fetchDir(currentPath + separator + folder + '/');
+                    }}
                     className="flex flex-col items-start gap-2 p-4 rounded-2xl border border-gray-50 bg-gray-50/30 hover:bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-500/5 transition-all group text-left relative overflow-hidden"
                   >
                     <div className="w-8 h-8 bg-amber-50 text-amber-500 rounded-lg flex items-center justify-center group-hover:bg-amber-100 transition-colors">

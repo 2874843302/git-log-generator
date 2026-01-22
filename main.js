@@ -1,13 +1,13 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+require('dotenv').config(); // 加载环境变量
+const { registerIpcHandlers, cleanup } = require('./backend/ipcHandlers');
 
 // 判定开发环境
 const isDev = !app.isPackaged;
 
-// 保持对窗口对象的全局引用，避免 JavaScript 对象被垃圾回收时窗口关闭
+// 保持对窗口对象的全局引用
 let mainWindow;
-let backendProcess;
 
 /**
  * 创建 Electron 窗口
@@ -38,65 +38,35 @@ function createWindow() {
     });
 }
 
-/**
- * 启动后端 Express 服务
- */
-function startBackend() {
-    console.log('正在启动后端服务...');
-    
-    // 获取后端路径，处理 ASAR 环境
-    let backendDir = path.join(__dirname, 'backend');
-    if (__dirname.includes('app.asar')) {
-        backendDir = backendDir.replace('app.asar', 'app.asar.unpacked');
-    }
-    
-    const backendPath = path.join(backendDir, 'server/index.js');
-    
-    backendProcess = spawn('node', [backendPath], {
-        cwd: backendDir,
-        env: { ...process.env, PORT: 3001 },
-        shell: true
-    });
-
-    backendProcess.stdout.on('data', (data) => {
-        console.log(`[Backend]: ${data}`);
-    });
-
-    backendProcess.stderr.on('data', (data) => {
-        console.error(`[Backend Error]: ${data}`);
-    });
-
-    backendProcess.on('close', (code) => {
-        console.log(`后端进程退出，退出码: ${code}`);
-    });
-}
-
 // 当 Electron 初始化完成并准备好创建浏览器窗口时调用
 app.whenReady().then(() => {
-    startBackend();
+    // 注册 IPC 处理函数替代 Express 后端
+    registerIpcHandlers();
+    
     createWindow();
 
     app.on('activate', () => {
-        // 在 macOS 上，当点击 dock 图标并且没有其他窗口打开时，通常会重新创建一个窗口
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
         }
     });
 });
 
-// 除了 macOS 外，当所有窗口关闭时退出应用
-app.on('window-all-closed', () => {
+// 当所有窗口关闭时退出应用
+app.on('window-all-closed', async () => {
+    console.log('所有窗口已关闭，正在执行清理并退出...');
+    await cleanup();
     if (process.platform !== 'darwin') {
-        if (backendProcess) {
-            backendProcess.kill();
-        }
         app.quit();
     }
 });
 
-// 在应用退出前确保关闭后端进程
+// 在应用退出前确保清理
+app.on('will-quit', async () => {
+    await cleanup();
+});
+
 app.on('quit', () => {
-    if (backendProcess) {
-        backendProcess.kill();
-    }
+    console.log('应用已完全退出');
+    process.exit(0); // 强制结束进程
 });
