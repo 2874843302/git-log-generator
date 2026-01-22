@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -17,6 +18,8 @@ const SettingsModal = ({
   updateXuexitongUsername,
   xuexitongPassword,
   updateXuexitongPassword,
+  browserPath,
+  updateBrowserPath,
   initEnv,
   loading,
   originPos 
@@ -26,9 +29,13 @@ const SettingsModal = ({
   const [localXuexitongUrl, setLocalXuexitongUrl] = useState(xuexitongUrl);
   const [localXuexitongUsername, setLocalXuexitongUsername] = useState(xuexitongUsername);
   const [localXuexitongPassword, setLocalXuexitongPassword] = useState(xuexitongPassword);
+  const [localBrowserPath, setLocalBrowserPath] = useState(browserPath);
+  const [detectedBrowsers, setDetectedBrowsers] = useState([]);
+  const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [showXuexitongPwd, setShowXuexitongPwd] = useState(false);
   const [isXuexitongOpen, setIsXuexitongOpen] = useState(false);
+  const [isBrowserOpen, setIsBrowserOpen] = useState(false);
 
   useEffect(() => {
     setLocalApiKey(apiKey);
@@ -49,6 +56,31 @@ const SettingsModal = ({
   useEffect(() => {
     setLocalXuexitongPassword(xuexitongPassword);
   }, [xuexitongPassword]);
+
+  useEffect(() => {
+    setLocalBrowserPath(browserPath);
+  }, [browserPath]);
+
+  const handleDetectBrowsers = async () => {
+    try {
+      setIsDetecting(true);
+      const browsers = await api.detectBrowsers();
+      setDetectedBrowsers(browsers);
+    } catch (err) {
+      console.error('检测浏览器失败', err);
+    } finally {
+      setIsDetecting(false);
+    }
+  };
+
+  const handleApplyBrowser = (path) => {
+    setLocalBrowserPath(path);
+    updateBrowserPath(path);
+  };
+
+  const handleSaveBrowserPath = () => {
+    updateBrowserPath(localBrowserPath);
+  };
 
   const handleSaveKey = () => {
     updateApiKey(localApiKey);
@@ -283,7 +315,103 @@ const SettingsModal = ({
             </AnimatePresence>
           </section>
 
-          {/* 5. API 密钥 */}
+          {/* 5. 浏览器设置 */}
+          <section className="space-y-3">
+            <button 
+              onClick={() => setIsBrowserOpen(!isBrowserOpen)}
+              className="w-full flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
+                <Eye size={14} className={isBrowserOpen ? "text-blue-500" : ""} />
+                <span>浏览器路径配置</span>
+                <span className="ml-2 px-1.5 py-0.5 bg-blue-50 text-[9px] text-blue-500 rounded-md font-normal lowercase tracking-normal">无痕模式</span>
+              </div>
+              {isBrowserOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+            </button>
+
+            <AnimatePresence>
+              {isBrowserOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-4 space-y-4 mt-2">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-blue-600 uppercase">浏览器可执行文件路径</label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="text"
+                          value={localBrowserPath}
+                          onChange={(e) => setLocalBrowserPath(e.target.value)}
+                          placeholder="例如: C:\Program Files\Google\Chrome\Application\chrome.exe"
+                          className="flex-1 px-4 py-2 bg-white border border-blue-100 rounded-xl text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                        <button 
+                          onClick={handleSaveBrowserPath}
+                          disabled={localBrowserPath === browserPath}
+                          className={`p-2 rounded-xl transition-all shadow-sm ${
+                            localBrowserPath === browserPath
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          <Check size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-blue-600 uppercase">检测到的浏览器</label>
+                        <button 
+                          onClick={handleDetectBrowsers}
+                          disabled={isDetecting}
+                          className="text-[9px] px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center gap-1"
+                        >
+                          {isDetecting ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                          立即检测
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {detectedBrowsers.length > 0 ? (
+                          detectedBrowsers.map((b, idx) => (
+                            <div key={idx} className="flex flex-col gap-1 p-2 bg-white border border-blue-50 rounded-xl hover:border-blue-200 transition-all group">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-gray-700">{b.name}</span>
+                                <button 
+                                  onClick={() => handleApplyBrowser(b.path)}
+                                  className={`px-2 py-1 text-[9px] font-bold rounded-lg transition-all ${
+                                    localBrowserPath === b.path 
+                                      ? 'bg-green-50 text-green-600 cursor-default'
+                                      : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-sm'
+                                  }`}
+                                >
+                                  {localBrowserPath === b.path ? '已应用' : '应用此路径'}
+                                </button>
+                              </div>
+                              <span className="text-[9px] text-gray-400 truncate font-mono" title={b.path}>{b.path}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-4 bg-white/50 border border-dashed border-blue-100 rounded-xl">
+                            <p className="text-[10px] text-gray-400">点击“检测”自动查找本地已安装浏览器</p>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-gray-400 leading-relaxed italic">
+                        提示：留空将使用内置浏览器。建议配置本地 Chrome 或 Edge 并自动开启无痕模式操作。
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+
+          {/* 6. API 密钥 */}
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
               <Key size={14} />

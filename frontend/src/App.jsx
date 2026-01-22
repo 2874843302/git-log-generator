@@ -48,6 +48,7 @@ function App() {
   const [xuexitongUrl, setXuexitongUrl] = useState('https://note.chaoxing.com/pc/index');
   const [xuexitongUsername, setXuexitongUsername] = useState('');
   const [xuexitongPassword, setXuexitongPassword] = useState('');
+  const [browserPath, setBrowserPath] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerPos, setBranchPickerPos] = useState({ x: '50%', y: '50%' });
@@ -84,6 +85,17 @@ function App() {
       setXuexitongUrl(res.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
       setXuexitongUsername(res.XUEXITONG_USERNAME || '');
       setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
+      setBrowserPath(res.BROWSER_PATH || '');
+      
+      // 加载上次选择的仓库
+      if (res.LAST_SELECTED_REPOS) {
+        const paths = res.LAST_SELECTED_REPOS.split(',').filter(p => p.trim());
+        if (paths.length > 0) {
+          setRepoPaths(paths);
+          fetchAuthors(paths);
+          fetchBranches(paths);
+        }
+      }
     } catch (err) {
       console.error('获取配置信息失败', err);
     }
@@ -115,10 +127,32 @@ function App() {
       if (key === 'XUEXITONG_NOTE_URL') setXuexitongUrl(value);
       if (key === 'XUEXITONG_USERNAME') setXuexitongUsername(value);
       if (key === 'XUEXITONG_PASSWORD') setXuexitongPassword(value);
+      if (key === 'BROWSER_PATH') setBrowserPath(value);
     } catch (err) {
-      setError(`更新配置 ${key} 失败`);
+      console.error(`更新配置 ${key} 失败`, err);
     }
   };
+
+  // 监听仓库列表变动，自动保存到配置
+  useEffect(() => {
+    // 只有在 repoPaths 有值或者明确变空时才同步（避免初始化时的干扰）
+    // 实际上我们可以直接同步，因为 fetchConfig 只在初始化执行一次
+    const saveRepos = async () => {
+      const repoString = repoPaths.join(',');
+      try {
+        await api.updateConfig({ 'LAST_SELECTED_REPOS': repoString });
+      } catch (err) {
+        console.error('保存仓库列表失败', err);
+      }
+    };
+    
+    // 延迟执行，避免频繁 IO
+    const timer = setTimeout(() => {
+      saveRepos();
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [repoPaths]);
 
   const selectFolder = (e) => {
     const rect = e?.currentTarget?.getBoundingClientRect();
@@ -631,9 +665,11 @@ function App() {
               xuexitongUsername={xuexitongUsername}
               updateXuexitongUsername={(val) => updateConfig('XUEXITONG_USERNAME', val)}
               xuexitongPassword={xuexitongPassword}
-              updateXuexitongPassword={(val) => updateConfig('XUEXITONG_PASSWORD', val)}
-              initEnv={initEnv}
-              loading={loading}
+                updateXuexitongPassword={(val) => updateConfig('XUEXITONG_PASSWORD', val)}
+                browserPath={browserPath}
+                updateBrowserPath={(val) => updateConfig('BROWSER_PATH', val)}
+                initEnv={initEnv}
+                loading={loading}
               originPos={settingsModalPos}
             />
           )}

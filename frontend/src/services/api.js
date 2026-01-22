@@ -9,6 +9,7 @@ const api = {
   updateConfig: (config) => window.electron.invoke('api:updateConfig', config),
   getEnvStatus: () => window.electron.invoke('api:getEnvStatus'),
   initEnv: () => window.electron.invoke('api:initEnv'),
+  detectBrowsers: () => window.electron.invoke('api:detectBrowsers'),
 
   // 文件系统相关
   listDir: (dirPath) => window.electron.invoke('api:listDir', { dirPath }),

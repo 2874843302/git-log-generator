@@ -9,6 +9,7 @@ const { templates } = require('./server/constants/templates');
 
 // Playwright 浏览器实例单例，避免重复启动
 let browserContext = null;
+let lastUsedBrowserPath = null; // 记录上一次使用的浏览器路径
 
 function registerIpcHandlers() {
   // Folder & Config 相关
@@ -101,11 +102,41 @@ function registerIpcHandlers() {
   ipcMain.handle('api:initEnv', async () => {
     const envPath = path.join(process.cwd(), '.env');
     if (!fs.existsSync(envPath)) {
-      const template = 'BASE_REPO_DIR=\nDEEPSEEK_API_KEY=\nDEFAULT_USER=\nXUEXITONG_NOTE_URL=https://note.chaoxing.com/pc/index\nXUEXITONG_USERNAME=\nXUEXITONG_PASSWORD=\n';
+      const template = 'BASE_REPO_DIR=\nDEEPSEEK_API_KEY=\nDEFAULT_USER=\nXUEXITONG_NOTE_URL=https://note.chaoxing.com/pc/index\nXUEXITONG_USERNAME=\nXUEXITONG_PASSWORD=\nLAST_SELECTED_REPOS=\nBROWSER_PATH=\n';
       fs.writeFileSync(envPath, template);
       return { success: true };
     }
     return { success: false, message: '环境文件已存在' };
+  });
+
+  // 浏览器检测相关
+  ipcMain.handle('api:detectBrowsers', async () => {
+    const browsers = [];
+    const commonPaths = {
+      'Chrome': [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe')
+      ],
+      'Edge': [
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+      ],
+      'Firefox': [
+        'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+        'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe'
+      ]
+    };
+
+    for (const [name, paths] of Object.entries(commonPaths)) {
+      for (const p of paths) {
+        if (fs.existsSync(p)) {
+          browsers.push({ name, path: p });
+          break; // 找到一个路径即可
+        }
+      }
+    }
+    return browsers;
   });
 
   // Git 相关
@@ -172,6 +203,7 @@ function registerIpcHandlers() {
     const targetUrl = process.env.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index';
     const username = process.env.XUEXITONG_USERNAME;
     const password = process.env.XUEXITONG_PASSWORD;
+    const customBrowserPath = process.env.BROWSER_PATH;
 
     if (!username || !password) {
       throw new Error('未配置学习通账号密码，请在设置中配置后再试');
@@ -179,30 +211,52 @@ function registerIpcHandlers() {
 
     try {
       // 1. 启动或复用浏览器
-      if (!browserContext || !browserContext.browser()?.isConnected()) {
-        console.log('正在启动或重新连接浏览器...');
-        const userDataDir = path.join(process.cwd(), 'playwright-data');
-        if (!fs.existsSync(userDataDir)) {
-          fs.mkdirSync(userDataDir, { recursive: true });
-        }
+      // 如果路径发生变化，强制重启浏览器
+      const isPathChanged = lastUsedBrowserPath !== customBrowserPath;
+      
+      if (!browserContext || !browserContext.browser()?.isConnected() || isPathChanged) {
+        console.log(isPathChanged ? '浏览器路径已更改，正在重新启动...' : '正在启动或重新连接浏览器...');
         
         try {
-          // 如果旧的上下文存在但已失效，先尝试关闭（不报错）
           if (browserContext) {
             await browserContext.close().catch(() => {});
+            browserContext = null;
           }
 
-          browserContext = await chromium.launchPersistentContext(userDataDir, {
+          lastUsedBrowserPath = customBrowserPath; // 更新记录
+          
+          const launchOptions = {
             headless: false,
             viewport: { width: 1280, height: 800 },
             args: [
               '--disable-blink-features=AutomationControlled',
               '--no-sandbox',
-              '--disable-setuid-sandbox'
+              '--disable-setuid-sandbox',
+              '--incognito' // 强制开启无痕模式
             ]
-          });
+          };
 
-          // 监听关闭事件，清理引用
+          // 如果用户指定了本地浏览器路径，则使用它
+          if (customBrowserPath && fs.existsSync(customBrowserPath)) {
+            console.log(`使用自定义浏览器路径: ${customBrowserPath}`);
+            launchOptions.executablePath = customBrowserPath;
+            
+            // 使用本地浏览器时，通常不需要 launchPersistentContext，
+            // 除非用户想保存本地浏览器的 session。但根据需求“无痕模式”，
+            // 我们改用普通 launch + newContext
+            const browser = await chromium.launch(launchOptions);
+            browserContext = await browser.newContext({
+              viewport: { width: 1280, height: 800 }
+            });
+          } else {
+            // 如果没指定，仍使用 Playwright 默认的持久化目录（作为兜底）
+            const userDataDir = path.join(process.cwd(), 'playwright-data');
+            if (!fs.existsSync(userDataDir)) {
+              fs.mkdirSync(userDataDir, { recursive: true });
+            }
+            browserContext = await chromium.launchPersistentContext(userDataDir, launchOptions);
+          }
+
           browserContext.on('close', () => {
             console.log('浏览器上下文已关闭');
             browserContext = null;
@@ -210,7 +264,7 @@ function registerIpcHandlers() {
         } catch (launchError) {
           console.error('浏览器启动失败:', launchError);
           browserContext = null;
-          throw new Error('无法启动浏览器，请检查是否有其他实例正在运行');
+          throw new Error(`无法启动浏览器: ${launchError.message}。请检查路径配置是否正确。`);
         }
       }
 
@@ -335,10 +389,15 @@ async function cleanup() {
   if (browserContext) {
     console.log('正在关闭浏览器实例...');
     try {
-      await browserContext.close();
+      // 加上超时，防止关闭过程卡死导致应用无法退出
+      await Promise.race([
+        browserContext.close(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+      ]);
       browserContext = null;
     } catch (e) {
-      console.error('关闭浏览器失败:', e);
+      console.error('关闭浏览器失败或超时:', e);
+      browserContext = null; // 无论如何都清空引用
     }
   }
 }
