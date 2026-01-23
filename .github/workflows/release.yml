@@ -1,0 +1,42 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - xxt_support
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        # 1. 安装根目录依赖
+        # 2. 安装 frontend 依赖 (后端依赖会在 electron-builder 构建时自动处理或通过 postinstall 处理)
+        run: |
+          npm ci
+          cd frontend
+          npm ci
+          
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm run build
+          
+      - name: Build Electron App
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build -- --publish always
