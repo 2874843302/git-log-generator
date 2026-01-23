@@ -15,10 +15,10 @@ const getIconPath = () => {
     // 强制使用最可靠的绝对路径
     const baseDir = __dirname;
     const paths = [
-        path.join(baseDir, 'frontend/public/favicon.ico'),
-        path.join(baseDir, 'frontend/dist/favicon.ico'),
-        path.join(baseDir, 'favicon.ico'),
-        path.join(process.cwd(), 'frontend/public/favicon.ico')
+        path.join(baseDir, 'frontend/public/favicon.png'),
+        path.join(baseDir, 'frontend/dist/favicon.png'),
+        path.join(baseDir, 'favicon.png'),
+        path.join(process.cwd(), 'frontend/public/favicon.png')
     ];
     for (const p of paths) {
         const absolutePath = path.resolve(p);
@@ -27,7 +27,7 @@ const getIconPath = () => {
             return absolutePath;
         }
     }
-    return path.resolve(baseDir, 'frontend/public/favicon.ico');
+    return path.resolve(baseDir, 'frontend/public/favicon.png');
 };
 
 const iconPath = getIconPath();
@@ -44,6 +44,7 @@ initDatabase(app.getPath('userData'));
 
 // 2. 再加载 ipcHandlers，因为它依赖数据库中的环境变量
 const { registerIpcHandlers, cleanup } = require('./backend/ipcHandlers');
+const { initUpdater } = require('./updater');
 
 // 判定开发环境
 const isDev = !app.isPackaged;
@@ -100,7 +101,10 @@ app.whenReady().then(() => {
     
     createWindow();
 
-    app.on('activate', () => {
+    // 初始化更新程序
+    initUpdater(mainWindow);
+
+    app.on('activate', function () {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
         }

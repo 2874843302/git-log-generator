@@ -69,9 +69,55 @@ function App() {
   const [foolModeOpen, setFoolModeOpen] = useState(false);
   const [foolModePos, setFoolModePos] = useState(null);
 
+  // 更新相关状态
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateStatus, setUpdateStatus] = useState('idle'); // idle, checking, available, downloading, downloaded, error
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [updateError, setUpdateError] = useState('');
+
   useEffect(() => {
     fetchTemplates();
     fetchConfig();
+
+    // 注册更新相关的监听
+    const removeCheckListener = window.electron.receive('checking-for-update', () => {
+      setUpdateStatus('checking');
+    });
+
+    const removeAvailableListener = window.electron.receive('update-available', (info) => {
+      setUpdateInfo(info);
+      setUpdateStatus('available');
+    });
+
+    const removeNotAvailableListener = window.electron.receive('update-not-available', () => {
+      setUpdateStatus('idle');
+    });
+
+    const removeProgressListener = window.electron.receive('download-progress', (progress) => {
+      setUpdateStatus('downloading');
+      setDownloadProgress(Math.floor(progress.percent));
+    });
+
+    const removeDownloadedListener = window.electron.receive('update-downloaded', () => {
+      setUpdateStatus('downloaded');
+    });
+
+    const removeErrorListener = window.electron.receive('update-error', (err) => {
+      setUpdateError(err);
+      setUpdateStatus('error');
+    });
+
+    // 自动检查更新
+    window.electron.send('check-for-update');
+
+    return () => {
+      if (removeCheckListener) removeCheckListener();
+      if (removeAvailableListener) removeAvailableListener();
+      if (removeNotAvailableListener) removeNotAvailableListener();
+      if (removeProgressListener) removeProgressListener();
+      if (removeDownloadedListener) removeDownloadedListener();
+      if (removeErrorListener) removeErrorListener();
+    };
   }, []);
 
   // 自动选中默认用户
@@ -842,6 +888,103 @@ function App() {
             setSelectedBranches={setSelectedBranches}
             originPos={branchPickerPos}
           />
+        )}
+      </AnimatePresence>
+
+      {/* 更新提醒弹窗 */}
+      <AnimatePresence>
+        {updateStatus !== 'idle' && updateStatus !== 'checking' && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+                    <Clock className="w-6 h-6 text-blue-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">版本更新</h3>
+                    <p className="text-xs text-gray-500">发现新版本 {updateInfo?.version}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {updateStatus === 'available' && (
+                    <>
+                      <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 max-h-32 overflow-y-auto">
+                        <p className="font-medium mb-1">更新内容：</p>
+                        <div dangerouslySetInnerHTML={{ __html: updateInfo?.releaseNotes || '优化性能与修复已知问题' }}></div>
+                      </div>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => setUpdateStatus('idle')}
+                          className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                        >
+                          以后再说
+                        </button>
+                        <button 
+                          onClick={() => window.electron.send('start-download-update')}
+                          className="flex-1 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
+                        >
+                          立即下载
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {updateStatus === 'downloading' && (
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>正在下载更新...</span>
+                        <span>{downloadProgress}%</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <motion.div 
+                          className="h-full bg-blue-500"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${downloadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {updateStatus === 'downloaded' && (
+                    <>
+                      <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        新版本已准备就绪！
+                      </div>
+                      <button 
+                        onClick={() => window.electron.send('quit-and-install')}
+                        className="w-full px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-medium hover:bg-green-700 shadow-lg shadow-green-200 transition-all"
+                      >
+                        重启并安装
+                      </button>
+                    </>
+                  )}
+
+                  {updateStatus === 'error' && (
+                    <>
+                      <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        更新出错: {updateError}
+                      </div>
+                      <button 
+                        onClick={() => setUpdateStatus('idle')}
+                        className="w-full px-4 py-2 rounded-xl bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200 transition-all"
+                      >
+                        关闭
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

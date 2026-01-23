@@ -19,7 +19,12 @@ contextBridge.exposeInMainWorld('electron', {
      * 发送异步消息到主进程
      */
     send: (channel, data) => {
-        const validChannels = ['toMain'];
+        const validChannels = [
+            'toMain',
+            'check-for-update',
+            'start-download-update',
+            'quit-and-install'
+        ];
         if (validChannels.includes(channel)) {
             ipcRenderer.send(channel, data);
         }
@@ -29,9 +34,19 @@ contextBridge.exposeInMainWorld('electron', {
      * 接收来自主进程的消息
      */
     receive: (channel, func) => {
-        const validChannels = ['fromMain'];
+        const validChannels = [
+            'fromMain',
+            'update-available',
+            'update-not-available',
+            'update-error',
+            'checking-for-update',
+            'download-progress',
+            'update-downloaded'
+        ];
         if (validChannels.includes(channel)) {
-            ipcRenderer.on(channel, (event, ...args) => func(...args));
+            const subscription = (event, ...args) => func(...args);
+            ipcRenderer.on(channel, subscription);
+            return () => ipcRenderer.removeListener(channel, subscription);
         }
     }
 });

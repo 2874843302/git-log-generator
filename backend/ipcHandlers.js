@@ -287,8 +287,6 @@ function registerIpcHandlers() {
 
     // 获取通知图标的可靠路径
      const getNotifyIcon = () => {
-       const ico = path.resolve(__dirname, '../frontend/public/favicon.ico');
-       if (fs.existsSync(ico)) return ico;
        const png = path.resolve(__dirname, '../frontend/public/favicon.png');
        if (fs.existsSync(png)) return png;
        return undefined;
@@ -473,6 +471,12 @@ function registerIpcHandlers() {
       await notePage.click('#y-finish', { delay: 0 });
       console.log('同步指令已发出');
 
+      new Notification({
+        title: 'Git Log AI',
+        body: `同步成功：${title}`,
+        icon: getNotifyIcon()
+      }).show();
+
       return { success: true };
     } catch (error) {
       console.error('学习通同步失败:', error);
@@ -485,8 +489,6 @@ function registerIpcHandlers() {
     try {
       // 获取通知图标的可靠路径
        const getNotifyIcon = () => {
-         const ico = path.resolve(__dirname, '../frontend/public/favicon.ico');
-         if (fs.existsSync(ico)) return ico;
          const png = path.resolve(__dirname, '../frontend/public/favicon.png');
          if (fs.existsSync(png)) return png;
          return undefined;

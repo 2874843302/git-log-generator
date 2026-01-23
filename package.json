@@ -26,8 +26,15 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "frontend/public/favicon.ico"
+      "icon": "frontend/public/favicon.png"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "2874843302",
+        "repo": "-"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -42,6 +49,8 @@
     "better-sqlite3": "^12.6.2",
     "dayjs": "^1.11.19",
     "dotenv": "^17.2.3",
+    "electron-log": "5.4.3",
+    "electron-updater": "6.7.3",
     "marked": "^17.0.1",
     "playwright": "^1.57.0",
     "simple-git": "^3.30.0"
