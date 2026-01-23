@@ -64,7 +64,6 @@ npm run dev
   ```bash
   npm run electron:build
   ```
-  打包后的安装包将生成在 `dist_electron_2.1.2/` 目录下。
 
 - **自动化发布 (GitHub Actions)**：
   项目已配置 GitHub Actions 自动化工作流。当你向仓库推送以 `v` 开头的标签（例如 `v2.1.2`）时，系统会自动执行打包并创建一个新的 GitHub Release，同时上传安装包和更新说明文件（`latest.yml`）。
