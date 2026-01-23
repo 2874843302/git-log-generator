@@ -27,8 +27,10 @@
       "updater.js",
       "preload.js",
       "backend/**/*",
+      "!backend/user_data/**/*",
+      "!playwright-data/**/*",
       "frontend/dist/**/*",
-      "frontend/public/favicon.png"
+      "frontend/public/**/*"
     ],
     "win": {
       "target": "nsis",
