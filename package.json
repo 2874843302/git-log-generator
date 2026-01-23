@@ -24,9 +24,11 @@
     "files": [
       "package.json",
       "main.js",
+      "updater.js",
       "preload.js",
       "backend/**/*",
-      "frontend/dist/**/*"
+      "frontend/dist/**/*",
+      "frontend/public/favicon.png"
     ],
     "win": {
       "target": "nsis",
