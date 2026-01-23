@@ -153,8 +153,8 @@ function registerIpcHandlers() {
       FOOL_MODE_SELECTED_REPOS: '',
       BROWSER_PATH: '',
       NOTIFICATION_SOUND_ENABLED: 'true',
-      SUCCESS_SOUND: 'success.mp3',
-      FAILURE_SOUND: 'failure.mp3',
+      SUCCESS_SOUND: 'yeah.mp3',
+      FAILURE_SOUND: '啊咧？.mp3',
       SCHEDULE_ENABLED: 'false',
       SCHEDULE_TIME: '18:00'
     };
@@ -205,16 +205,33 @@ function registerIpcHandlers() {
   // 音效相关
   ipcMain.handle('api:listSounds', async () => {
     try {
-      const soundDir = path.join(__dirname, '../frontend/public/sound');
-      if (!fs.existsSync(soundDir)) {
+      // 增加多种路径探测，确保在开发和生产环境下都能找到音效
+      const possiblePaths = [
+        path.join(__dirname, '../frontend/public/sound'),
+        path.join(__dirname, '../frontend/dist/sound'),
+        path.join(process.cwd(), 'frontend/public/sound'),
+        path.join(process.cwd(), 'frontend/dist/sound')
+      ];
+
+      let soundDir = null;
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          soundDir = p;
+          break;
+        }
+      }
+
+      if (!soundDir) {
+        console.warn('未找到音效目录');
         return [];
       }
+
       const files = fs.readdirSync(soundDir);
       return files
         .filter(file => file.endsWith('.mp3'))
         .map(file => ({
           name: file,
-          path: `/sound/${file}` // 前端可以通过这个路径直接访问 public 下的文件
+          path: `sound/${file}` // 前端统一使用相对路径 ./sound/filename
         }));
     } catch (error) {
       console.error('获取音效列表失败:', error);

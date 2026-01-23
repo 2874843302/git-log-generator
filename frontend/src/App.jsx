@@ -51,8 +51,8 @@ function App() {
   const [xuexitongPassword, setXuexitongPassword] = useState('');
   const [browserPath, setBrowserPath] = useState('');
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
-  const [successSound, setSuccessSound] = useState('success.mp3');
-  const [failureSound, setFailureSound] = useState('failure.mp3');
+  const [successSound, setSuccessSound] = useState('yeah.mp3');
+  const [failureSound, setFailureSound] = useState('啊咧？.mp3');
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [countdown, setCountdown] = useState('');
@@ -137,7 +137,8 @@ function App() {
     if (!notificationSoundEnabled) return;
     
     const soundFile = type === 'success' ? successSound : failureSound;
-    const audio = new Audio(`/sound/${soundFile}`);
+    // 使用 encodeURIComponent 处理文件名中的特殊字符（如 ？），确保 URL 解析正确
+    const audio = new Audio(`./sound/${encodeURIComponent(soundFile)}`);
     audio.play().catch(err => console.error('播放音效失败:', err));
   }, [notificationSoundEnabled, successSound, failureSound]);
 
@@ -405,8 +406,13 @@ function App() {
       setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
       setBrowserPath(res.BROWSER_PATH || '');
       setNotificationSoundEnabled(res.NOTIFICATION_SOUND_ENABLED === 'true' || res.NOTIFICATION_SOUND_ENABLED === true);
-      setSuccessSound(res.SUCCESS_SOUND || 'success.mp3');
-      setFailureSound(res.FAILURE_SOUND || 'failure.mp3');
+      
+      // 兼容旧版本的默认音效文件名
+      const sSound = res.SUCCESS_SOUND === 'success.mp3' ? 'yeah.mp3' : (res.SUCCESS_SOUND || 'yeah.mp3');
+      const fSound = res.FAILURE_SOUND === 'failure.mp3' ? '啊咧？.mp3' : (res.FAILURE_SOUND || '啊咧？.mp3');
+      setSuccessSound(sSound);
+      setFailureSound(fSound);
+      
       setScheduleEnabled(res.SCHEDULE_ENABLED === 'true' || res.SCHEDULE_ENABLED === true);
       setScheduleTime(res.SCHEDULE_TIME || '18:00');
       

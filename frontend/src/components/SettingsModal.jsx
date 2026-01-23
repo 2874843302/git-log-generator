@@ -67,8 +67,9 @@ const SettingsModal = ({
     }
   };
 
-  const playPreview = (soundPath) => {
-    const audio = new Audio(soundPath);
+  const playPreview = (soundName) => {
+    // 使用 encodeURIComponent 处理文件名中的特殊字符，并确保路径拼接正确
+    const audio = new Audio(`./sound/${encodeURIComponent(soundName)}`);
     audio.play().catch(err => console.error('播放预览失败', err));
   };
 
@@ -503,7 +504,7 @@ const SettingsModal = ({
                           ))}
                         </select>
                         <button 
-                          onClick={() => playPreview(`/sound/${successSound}`)}
+                          onClick={() => playPreview(successSound)}
                           className="p-2 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-200 transition-colors"
                           title="试听"
                         >
@@ -525,7 +526,7 @@ const SettingsModal = ({
                           ))}
                         </select>
                         <button 
-                          onClick={() => playPreview(`/sound/${failureSound}`)}
+                          onClick={() => playPreview(failureSound)}
                           className="p-2 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-200 transition-colors"
                           title="试听"
                         >
