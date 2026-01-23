@@ -3,6 +3,10 @@
   "version": "2.1.2",
   "author": "Trae Pair Programmer",
   "description": "Git Log Generator - Root Manager",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2874843302/git-log-generator.git"
+  },
   "private": true,
   "main": "main.js",
   "scripts": {
@@ -28,13 +32,6 @@
       "target": "nsis",
       "icon": "frontend/public/favicon.png"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "2874843302",
-        "repo": "git-log-generator"
-      }
-    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
