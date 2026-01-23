@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from './services/api';
 import dayjs from 'dayjs';
-import { GitCommit, AlertCircle } from 'lucide-react';
+import { GitCommit, AlertCircle, Clock } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 
 // 导入拆分后的组件
@@ -19,6 +19,7 @@ import FoolModeModal from './components/FoolModeModal';
 function App() {
   // 状态管理
   const [repoPaths, setRepoPaths] = useState([]);
+  const [foolModeRepos, setFoolModeRepos] = useState([]); // 傻瓜模式选中的仓库列表
   const [baseRepoDir, setBaseRepoDir] = useState('');
   const [startDate, setStartDate] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
   const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
@@ -49,6 +50,12 @@ function App() {
   const [xuexitongUsername, setXuexitongUsername] = useState('');
   const [xuexitongPassword, setXuexitongPassword] = useState('');
   const [browserPath, setBrowserPath] = useState('');
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
+  const [successSound, setSuccessSound] = useState('success.mp3');
+  const [failureSound, setFailureSound] = useState('failure.mp3');
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState('18:00');
+  const [countdown, setCountdown] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerPos, setBranchPickerPos] = useState({ x: '50%', y: '50%' });
@@ -67,12 +74,277 @@ function App() {
     fetchConfig();
   }, []);
 
-  // 当默认用户或作者列表变化时，自动选中默认用户
+  // 自动选中默认用户
   useEffect(() => {
     if (defaultUser && authors.includes(defaultUser)) {
       setSelectedAuthor(defaultUser);
     }
   }, [defaultUser, authors]);
+
+  // 定时任务触发记录，防止同一分钟内重复触发
+  const lastTriggeredRef = useRef('');
+
+  /**
+   * 播放通知音效
+   */
+  const playNotificationSound = React.useCallback((type) => {
+    if (!notificationSoundEnabled) return;
+    
+    const soundFile = type === 'success' ? successSound : failureSound;
+    const audio = new Audio(`/sound/${soundFile}`);
+    audio.play().catch(err => console.error('播放音效失败:', err));
+  }, [notificationSoundEnabled, successSound, failureSound]);
+
+  /**
+   * 同步笔记到学习通
+   */
+  const handleSyncToXuexitong = React.useCallback(async (content, isFoolMode = false, targetDate = null, headless = false) => {
+    console.log(`[Frontend] handleSyncToXuexitong 被调用, headless: ${headless}, isFoolMode: ${isFoolMode}`);
+    const syncDate = targetDate || endDate;
+    try {
+      const res = await api.createXuexitongNote({
+        content,
+        title: `工作日志 ${syncDate}`,
+        headless
+      });
+      if (res.success) {
+        // 播放成功音效
+        playNotificationSound('success');
+        
+        api.showNotification({
+          title: '同步成功',
+          body: isFoolMode 
+            ? `${syncDate} 的工作日志已成功同步到学习通`
+            : '同步成功！笔记已保存到学习通。',
+          silent: true // 已经手动播放了音效，所以通知设为静音
+        });
+      }
+    } catch (err) {
+      // 播放失败音效
+      playNotificationSound('failure');
+      
+      const errorMsg = err.message || '同步失败，请检查学习通配置';
+      api.showNotification({ 
+        title: '同步失败', 
+        body: isFoolMode 
+          ? `${syncDate} 的工作日志同步失败: ${errorMsg}` 
+          : errorMsg,
+        silent: true
+      });
+      console.error('Sync Error:', err);
+    }
+  }, [endDate, playNotificationSound]);
+
+  const generateLog = React.useCallback(async (customLogs = null, customTemplate = null, customRepoPaths = null, customOptions = null) => {
+    // 检查参数是否为 React 事件对象
+    const isEvent = customLogs && customLogs.nativeEvent;
+    const actualLogs = isEvent ? null : customLogs;
+
+    setLoading(true);
+    setError('');
+    try {
+      const targetLogs = actualLogs || logs.filter(log => !ignoredHashes.has(log.hash));
+      if (targetLogs.length === 0) {
+        setError('没有可供生成的有效提交记录（所有记录已被忽略或未获取）');
+        setLoading(false);
+        return;
+      }
+
+      console.log('开始请求 AI 生成，参数:', {
+        logsCount: targetLogs.length,
+        template: customTemplate || selectedTemplate,
+        apiKeyPresent: !!apiKey
+      });
+
+      const res = await api.generateAiLog({
+        logs: targetLogs,
+        repoPaths: customRepoPaths || repoPaths,
+        templateKey: customTemplate || selectedTemplate,
+        customPrompt: customPrompt,
+        tomorrowPlanPrompt: tomorrowPlanPrompt,
+        referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
+        options: customOptions || templateOptions,
+        apiKey: apiKey // 确保传递 API Key
+      });
+      
+      console.log('AI 生成返回结果:', res);
+
+      if (res && res.content) {
+        setGeneratedLog(res.content);
+        setActiveTab('result');
+        return res.content; // 返回生成的内容
+      } else {
+        console.warn('AI 返回内容为空:', res);
+        setError('AI 未能生成有效内容，请稍后再试');
+        return null;
+      }
+    } catch (err) {
+      console.error('generateLog 捕获到错误:', err);
+      setError(err.message || '生成日志失败，请检查 API 配置');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, tomorrowPlanPrompt, referenceLog, templateOptions, apiKey]);
+
+  /**
+   * 傻瓜模式一键生成逻辑
+   */
+  const handleFoolModeGenerate = React.useCallback(async (selectedRepos, templateKey = 'concise', targetDate = null, customOptions = null, headless = false) => {
+    console.log('[傻瓜模式] 开始执行...', { selectedRepos, templateKey, targetDate, headless });
+    setFoolModeOpen(false);
+    
+    // 1. 设置基础状态
+    const today = targetDate || dayjs().format('YYYY-MM-DD');
+    setStartDate(today);
+    setEndDate(today);
+    setRepoPaths(selectedRepos);
+    setSelectedAuthor(defaultUser);
+    setSelectedTemplate(templateKey);
+    
+    // 保存傻瓜模式选择的仓库到数据库
+    try {
+      await api.updateConfig({ FOOL_MODE_SELECTED_REPOS: selectedRepos.join(',') });
+      setFoolModeRepos(selectedRepos);
+    } catch (err) {
+      console.error('[傻瓜模式] 保存仓库配置失败:', err);
+    }
+
+    // 2. 获取日志
+    console.log('[傻瓜模式] 正在获取 Git 日志...', { today, author: defaultUser, selectedRepos });
+    
+    // 直接在这里调用 API 获取日志，而不是依赖 fetchLogs 内部的状态
+    setLoading(true);
+    setError('');
+    try {
+      const fetchedLogsRes = await api.getGitLogs({
+        repoPaths: selectedRepos,
+        startDate: today,
+        endDate: today,
+        author: defaultUser,
+        branches: {}
+      });
+      
+      const fetchedLogs = fetchedLogsRes?.logs || [];
+      setLogs(fetchedLogs);
+
+      // 3. 如果有日志，根据指定的模版生成报告
+      if (fetchedLogs && fetchedLogs.length > 0) {
+        console.log(`[傻瓜模式] 成功获取 ${fetchedLogs.length} 条日志，开始调用 AI 生成...`);
+        const foolModeOptions = customOptions || {
+          includeTomorrow: false,
+          includeReflections: false,
+          includeProblems: false,
+          includeDiffContent: false
+        };
+        
+        const content = await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
+        
+        if (content) {
+          console.log('[傻瓜模式] AI 生成完成，开始自动同步学习通...');
+          await handleSyncToXuexitong(content, true, today, headless);
+        } else {
+          console.warn('[傻瓜模式] AI 生成内容为空，取消同步');
+          api.showNotification({
+            title: '定时任务失败',
+            body: 'AI 生成内容为空，请检查模板配置或 API Key 是否正确。',
+            silent: false
+          });
+          playNotificationSound('failure');
+        }
+      } else {
+        console.warn('[傻瓜模式] 未获取到任何日志记录，任务结束');
+        api.showNotification({
+          title: '定时任务跳过',
+          body: `${today} 未发现任何 Git 提交记录，无需生成。`,
+          silent: false
+        });
+      }
+    } catch (err) {
+      console.error('[傻瓜模式] 执行过程出错:', err);
+      setError(`执行失败: ${err.message}`);
+      api.showNotification({
+        title: '定时任务出错',
+        body: `原因: ${err.message}`,
+        silent: false
+      });
+      playNotificationSound('failure');
+    } finally {
+      setLoading(false);
+    }
+  }, [defaultUser, generateLog, handleSyncToXuexitong]);
+
+  /**
+   * 定时任务逻辑
+   */
+  useEffect(() => {
+    let timer;
+    if (scheduleEnabled && scheduleTime && typeof scheduleTime === 'string' && scheduleTime.includes(':')) {
+      console.log(`[定时任务] 计时器已启动，目标时间: ${scheduleTime}, 当前已选仓库: ${foolModeRepos?.length || 0}个`);
+      
+      timer = setInterval(() => {
+        try {
+          const now = dayjs();
+          const [targetHour, targetMinute] = scheduleTime.split(':').map(Number);
+          
+          if (isNaN(targetHour) || isNaN(targetMinute)) return;
+
+          // 计算今天的目标触发时间
+          const todayTarget = dayjs().hour(targetHour).minute(targetMinute).second(0).millisecond(0);
+          
+          // 确定下一个目标时间（用于倒计时显示）
+          let nextTarget = todayTarget;
+          if (now.isAfter(todayTarget)) {
+            nextTarget = todayTarget.add(1, 'day');
+          }
+          
+          // 计算倒计时
+          const diff = nextTarget.diff(now);
+          const hours = Math.floor(diff / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+          
+          setCountdown(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+          
+          // 触发逻辑：
+          // 1. 当前时间的小时和分钟与目标一致
+          // 2. 该特定的“日期+时间”尚未触发过
+          const currentTriggerKey = `${now.format('YYYY-MM-DD')} ${scheduleTime}`;
+          
+          if (now.hour() === targetHour && now.minute() === targetMinute) {
+            if (lastTriggeredRef.current !== currentTriggerKey) {
+              const hasRepos = foolModeRepos && foolModeRepos.length > 0;
+              console.log(`[定时任务] 时间匹配成功! Key: ${currentTriggerKey}, 是否有仓库: ${hasRepos}`);
+              
+              if (hasRepos) {
+                console.log(`[定时任务] 开始执行自动同步...`);
+                lastTriggeredRef.current = currentTriggerKey;
+                api.updateConfig({ LAST_TRIGGERED_DATE: currentTriggerKey });
+                // 定时任务触发时，开启无头模式（headless: true）
+                handleFoolModeGenerate(foolModeRepos, 'concise', null, null, true);
+              } else {
+                console.warn('[定时任务] 触发时间已到，但未配置仓库，跳过执行');
+                lastTriggeredRef.current = currentTriggerKey;
+                api.updateConfig({ LAST_TRIGGERED_DATE: currentTriggerKey });
+                
+                api.showNotification({
+                  title: '定时任务未执行',
+                  body: '触发时间已到，但尚未在“傻瓜模式”中选择任何仓库。',
+                  silent: false
+                });
+                playNotificationSound('failure');
+              }
+            }
+          }
+        } catch (err) {
+          console.error('定时任务计时器错误:', err);
+        }
+      }, 1000);
+    } else {
+      setCountdown('');
+    }
+    return () => clearInterval(timer);
+  }, [scheduleEnabled, scheduleTime, foolModeRepos, handleFoolModeGenerate, playNotificationSound]);
 
   // API 调用逻辑
   const fetchConfig = async () => {
@@ -86,6 +358,21 @@ function App() {
       setXuexitongUsername(res.XUEXITONG_USERNAME || '');
       setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
       setBrowserPath(res.BROWSER_PATH || '');
+      setNotificationSoundEnabled(res.NOTIFICATION_SOUND_ENABLED === 'true' || res.NOTIFICATION_SOUND_ENABLED === true);
+      setSuccessSound(res.SUCCESS_SOUND || 'success.mp3');
+      setFailureSound(res.FAILURE_SOUND || 'failure.mp3');
+      setScheduleEnabled(res.SCHEDULE_ENABLED === 'true' || res.SCHEDULE_ENABLED === true);
+      setScheduleTime(res.SCHEDULE_TIME || '18:00');
+      
+      // 加载上次触发日期，防止重启后在同一分钟内重复触发
+      if (res.LAST_TRIGGERED_DATE) {
+        lastTriggeredRef.current = res.LAST_TRIGGERED_DATE;
+      }
+      
+      // 加载傻瓜模式选中的仓库
+      if (res.FOOL_MODE_SELECTED_REPOS) {
+        setFoolModeRepos(res.FOOL_MODE_SELECTED_REPOS.split(',').filter(Boolean));
+      }
       
       // 加载上次选择的仓库
       if (res.LAST_SELECTED_REPOS) {
@@ -106,12 +393,23 @@ function App() {
       setLoading(true);
       const res = await api.initEnv();
       if (res.success) {
-        alert('环境初始化成功');
+        playNotificationSound('success');
+        api.showNotification({
+          title: '初始化成功',
+          body: '开发环境已成功初始化',
+          silent: true
+        });
       } else {
-        alert(res.message);
+        playNotificationSound('failure');
+        api.showNotification({
+          title: '初始化失败',
+          body: res.message,
+          silent: true
+        });
       }
       fetchConfig(); // 重新加载配置
     } catch (err) {
+      playNotificationSound('failure');
       setError(err.message || '初始化环境失败');
     } finally {
       setLoading(false);
@@ -128,6 +426,11 @@ function App() {
       if (key === 'XUEXITONG_USERNAME') setXuexitongUsername(value);
       if (key === 'XUEXITONG_PASSWORD') setXuexitongPassword(value);
       if (key === 'BROWSER_PATH') setBrowserPath(value);
+      if (key === 'NOTIFICATION_SOUND_ENABLED') setNotificationSoundEnabled(value === 'true' || value === true);
+      if (key === 'SUCCESS_SOUND') setSuccessSound(value);
+      if (key === 'FAILURE_SOUND') setFailureSound(value);
+      if (key === 'SCHEDULE_ENABLED') setScheduleEnabled(value === 'true' || value === true);
+      if (key === 'SCHEDULE_TIME') setScheduleTime(value);
     } catch (err) {
       console.error(`更新配置 ${key} 失败`, err);
     }
@@ -321,111 +624,6 @@ function App() {
     });
   };
 
-  const generateLog = async (customLogs = null, customTemplate = null, customRepoPaths = null, customOptions = null) => {
-    // 检查参数是否为 React 事件对象
-    const isEvent = customLogs && customLogs.nativeEvent;
-    const actualLogs = isEvent ? null : customLogs;
-
-    setLoading(true);
-    setError('');
-    try {
-      const targetLogs = actualLogs || logs.filter(log => !ignoredHashes.has(log.hash));
-      if (targetLogs.length === 0) {
-        setError('没有可供生成的有效提交记录（所有记录已被忽略或未获取）');
-        setLoading(false);
-        return;
-      }
-
-      console.log('开始请求 AI 生成，参数:', {
-        logsCount: targetLogs.length,
-        template: customTemplate || selectedTemplate,
-        apiKeyPresent: !!apiKey
-      });
-
-      const res = await api.generateAiLog({
-        logs: targetLogs,
-        repoPaths: customRepoPaths || repoPaths,
-        templateKey: customTemplate || selectedTemplate,
-        customPrompt: customPrompt,
-        tomorrowPlanPrompt: tomorrowPlanPrompt,
-        referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
-        options: customOptions || templateOptions,
-        apiKey: apiKey // 确保传递 API Key
-      });
-      
-      console.log('AI 生成返回结果:', res);
-
-      if (res && res.content) {
-        setGeneratedLog(res.content);
-        setActiveTab('result');
-      } else {
-        console.warn('AI 返回内容为空:', res);
-        setError('AI 未能生成有效内容，请稍后再试');
-      }
-    } catch (err) {
-      console.error('generateLog 捕获到错误:', err);
-      setError(err.message || '生成日志失败，请检查 API 配置');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * 傻瓜模式一键生成逻辑
-   */
-  const handleFoolModeGenerate = async (selectedRepos, templateKey = 'concise', targetDate = null, customOptions = null) => {
-    setFoolModeOpen(false);
-    
-    // 1. 设置基础状态
-    const today = targetDate || dayjs().format('YYYY-MM-DD');
-    setStartDate(today);
-    setEndDate(today);
-    setRepoPaths(selectedRepos);
-    setSelectedAuthor(defaultUser);
-    setSelectedTemplate(templateKey);
-
-    // 2. 获取日志
-    const fetchedLogs = await fetchLogs({
-      repoPaths: selectedRepos,
-      startDate: today,
-      endDate: today,
-      author: defaultUser,
-      branches: {} // 傻瓜模式默认不限分支
-    });
-
-    // 3. 如果有日志，根据指定的模版生成报告
-    if (fetchedLogs && fetchedLogs.length > 0) {
-      // 如果没有传 customOptions，则默认不开启任何板块（保持之前逻辑）
-      // 但实际上 FoolModeModal 已经传了默认开启的 options
-      const foolModeOptions = customOptions || {
-        includeTomorrow: false,
-        includeReflections: false,
-        includeProblems: false,
-        includeDiffContent: false
-      };
-      await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
-    }
-  };
-
-  /**
-   * 同步笔记到学习通
-   */
-  const handleSyncToXuexitong = async (content) => {
-    try {
-      const res = await api.createXuexitongNote({
-        content,
-        title: `工作日志 ${endDate}`
-      });
-      if (res.success) {
-        alert('同步成功！笔记已保存到学习通。');
-      }
-    } catch (err) {
-      const errorMsg = err.message || '同步失败，请检查学习通配置';
-      alert(errorMsg);
-      console.error('Sync Error:', err);
-    }
-  };
-
   // 数据处理
   const chartData = (() => {
     const dataMap = {};
@@ -485,6 +683,9 @@ function App() {
             apiKey={apiKey}
             baseDir={baseDir}
             defaultUser={defaultUser}
+            notificationSoundEnabled={notificationSoundEnabled}
+            successSound={successSound}
+            failureSound={failureSound}
           />
 
           <LogGenerator 
@@ -515,7 +716,7 @@ function App() {
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
-            <span>Version 2.0.2</span>
+            <span>Version 2.1.2</span>
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
               API Connected
@@ -546,6 +747,23 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
+             {/* 倒计时显示 */}
+             {countdown && (
+               <div className="flex items-center gap-3 px-4 py-1.5 bg-blue-50 border border-blue-100 rounded-full group relative overflow-hidden">
+                 <div className="flex items-center gap-2 relative z-10">
+                   <Clock size={14} className="text-blue-600 animate-pulse" />
+                   <div className="flex items-baseline gap-1.5">
+                     <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">自动同步倒计时</span>
+                     <span className="text-xs font-mono font-bold text-blue-700">{countdown}</span>
+                   </div>
+                 </div>
+                 <div className="h-4 w-[1px] bg-blue-200 mx-1"></div>
+                 <div className="text-[10px] font-bold text-blue-500 relative z-10">
+                   {scheduleTime}
+                 </div>
+               </div>
+             )}
+
              {loading && (
                <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-ping"></div>
@@ -668,6 +886,16 @@ function App() {
                 updateXuexitongPassword={(val) => updateConfig('XUEXITONG_PASSWORD', val)}
                 browserPath={browserPath}
                 updateBrowserPath={(val) => updateConfig('BROWSER_PATH', val)}
+                notificationSoundEnabled={notificationSoundEnabled}
+                updateNotificationSoundEnabled={(val) => updateConfig('NOTIFICATION_SOUND_ENABLED', val)}
+                successSound={successSound}
+                updateSuccessSound={(val) => updateConfig('SUCCESS_SOUND', val)}
+                failureSound={failureSound}
+                updateFailureSound={(val) => updateConfig('FAILURE_SOUND', val)}
+                scheduleEnabled={scheduleEnabled}
+                updateScheduleEnabled={(val) => updateConfig('SCHEDULE_ENABLED', val)}
+                scheduleTime={scheduleTime}
+                updateScheduleTime={(val) => updateConfig('SCHEDULE_TIME', val)}
                 initEnv={initEnv}
                 loading={loading}
               originPos={settingsModalPos}

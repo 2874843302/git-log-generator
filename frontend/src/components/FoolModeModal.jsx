@@ -27,15 +27,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
     setLoading(true);
     setError('');
     try {
-      // 傻瓜模式下我们可能需要先获取配置中的基础路径，然后列出该路径下的所有文件夹作为潜在仓库
-      // 这里简化逻辑：我们假设 App 已经传递了仓库列表，或者我们需要一个新的 API 来获取“所有已发现的仓库”
-      // 但实际上之前的代码是调用 /git-repos，这个接口似乎我刚才在 api.js 里没有特别仔细看，
-      // 让我们回顾一下 api.js 的 routeMap: 'git-repos': 'api:listDir'
-      // 看起来之前的 git-repos 实际上是 listDir，这可能不太对，因为 listDir 是列出目录
-      // 如果后端有专门的 getRepos 逻辑，应该用那个。
-      // 但根据之前的代码，它似乎就是列出 baseDir 下的文件夹。
-      
-      // 我们先获取配置拿到 baseDir
+      // 获取配置
       const config = await api.getConfig();
       if (!config.BASE_REPO_DIR) {
         throw new Error('未配置基础仓库目录');
@@ -43,20 +35,42 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
       
       const res = await api.listDir(config.BASE_REPO_DIR);
       // 构造 repos 对象列表
-      const repos = res.folders.map(name => ({
+      const allRepos = res.folders.map(name => ({
         name,
-        path: `${res.currentPath}/${name}` // 注意路径分隔符，这里简单处理
+        path: `${res.currentPath}/${name}`
       }));
       
-      setRepos(repos);
-      // 默认全选
-      setSelectedRepos(repos.map(r => r.path));
+      setRepos(allRepos);
+
+      // 加载上次选择的仓库
+      const lastSelected = config.FOOL_MODE_SELECTED_REPOS;
+      if (lastSelected) {
+        const savedPaths = lastSelected.split(',');
+        // 过滤掉已经不存在的路径
+        const validPaths = savedPaths.filter(path => 
+          allRepos.some(r => r.path === path)
+        );
+        setSelectedRepos(validPaths.length > 0 ? validPaths : allRepos.map(r => r.path));
+      } else {
+        // 默认全选
+        setSelectedRepos(allRepos.map(r => r.path));
+      }
     } catch (err) {
       setError(err.message || '无法获取仓库列表，请检查基础目录配置');
     } finally {
       setLoading(false);
     }
   };
+
+  // 监听选择变化并保存
+  useEffect(() => {
+    if (!loading && selectedRepos.length > 0) {
+      const timer = setTimeout(() => {
+        api.updateConfig({ FOOL_MODE_SELECTED_REPOS: selectedRepos.join(',') });
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedRepos, loading]);
 
   const toggleRepo = (path) => {
     setSelectedRepos(prev => 

@@ -1,15 +1,78 @@
-const { ipcMain } = require('electron');
+const { ipcMain, Notification } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
+const { marked } = require('marked');
+
+// 配置 marked
+marked.setOptions({
+  breaks: true,
+  gfm: true
+});
 const gitService = require('./server/services/gitService');
 const aiService = require('./server/services/aiService');
 const { templates } = require('./server/constants/templates');
+const { getSetting, setSetting, getAllSettings } = require('./database');
+
+/**
+ * 迁移 .env 文件到 SQLite (仅在 SQLite 中没有对应键时迁移)
+ */
+function migrateEnvToSqlite() {
+  const envPath = path.join(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    try {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      envContent.split('\n').forEach(line => {
+        // 忽略注释和空行
+        if (line.trim() && !line.startsWith('#')) {
+          const firstEqualIndex = line.indexOf('=');
+          if (firstEqualIndex !== -1) {
+            const key = line.substring(0, firstEqualIndex).trim();
+            const value = line.substring(firstEqualIndex + 1).trim().replace(/^["']|["']$/g, '');
+            
+            // 如果数据库里没有，才迁移
+            if (getSetting(key) === null) {
+              setSetting(key, value);
+              console.log(`从 .env 迁移配置: ${key}`);
+            }
+          }
+        }
+      });
+    } catch (err) {
+      console.error('迁移 .env 失败:', err);
+    }
+  }
+}
+
+// 执行迁移
+migrateEnvToSqlite();
+
+// 将数据库中的配置加载到 process.env
+const allSettings = getAllSettings();
+Object.entries(allSettings).forEach(([key, value]) => {
+  process.env[key] = value;
+});
 
 // Playwright 浏览器实例单例，避免重复启动
-let browserContext = null;
+let browserInstance = null; // 记录浏览器实例
+let browserContext = null;  // 记录浏览器上下文
 let lastUsedBrowserPath = null; // 记录上一次使用的浏览器路径
+let lastUsedHeadless = null;    // 记录上一次使用的无头模式
+
+/**
+ * 确保浏览器已关闭
+ */
+async function closeBrowser() {
+  if (browserContext) {
+    await browserContext.close().catch(() => {});
+    browserContext = null;
+  }
+  if (browserInstance) {
+    await browserInstance.close().catch(() => {});
+    browserInstance = null;
+  }
+}
 
 function registerIpcHandlers() {
   // Folder & Config 相关
@@ -53,41 +116,16 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('api:getConfig', async () => {
-    const envPath = path.join(process.cwd(), '.env');
-    let config = { ...process.env };
-    if (fs.existsSync(envPath)) {
-      const envContent = fs.readFileSync(envPath, 'utf8');
-      const lines = envContent.split('\n');
-      lines.forEach(line => {
-        const [key, value] = line.split('=');
-        if (key && value) {
-          config[key.trim()] = value.trim().replace(/^["']|["']$/g, '');
-        }
-      });
-    }
-    return config;
+    // 从数据库获取所有设置，并合并当前 process.env
+    return { ...process.env, ...getAllSettings() };
   });
 
   ipcMain.handle('api:updateConfig', async (event, newConfig) => {
     try {
-      const envPath = path.join(process.cwd(), '.env');
-      let currentEnv = '';
-      if (fs.existsSync(envPath)) {
-        currentEnv = fs.readFileSync(envPath, 'utf8');
-      }
-
-      let envLines = currentEnv.split('\n');
       Object.entries(newConfig).forEach(([key, value]) => {
-        const index = envLines.findIndex(line => line.startsWith(`${key}=`));
-        if (index > -1) {
-          envLines[index] = `${key}=${value}`;
-        } else {
-          envLines.push(`${key}=${value}`);
-        }
+        setSetting(key, value);
         process.env[key] = value;
       });
-
-      fs.writeFileSync(envPath, envLines.join('\n').trim() + '\n');
       return { success: true };
     } catch (error) {
       throw new Error('更新配置失败: ' + error.message);
@@ -95,18 +133,43 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('api:getEnvStatus', async () => {
-    const envPath = path.join(process.cwd(), '.env');
-    return { exists: fs.existsSync(envPath) };
+    // 既然使用了 SQLite，配置总是在某种形式上“存在”的，
+    // 或者我们可以返回是否有关键配置
+    const settings = getAllSettings();
+    const hasRequiredConfig = !!(settings.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY);
+    return { exists: hasRequiredConfig };
   });
 
   ipcMain.handle('api:initEnv', async () => {
-    const envPath = path.join(process.cwd(), '.env');
-    if (!fs.existsSync(envPath)) {
-      const template = 'BASE_REPO_DIR=\nDEEPSEEK_API_KEY=\nDEFAULT_USER=\nXUEXITONG_NOTE_URL=https://note.chaoxing.com/pc/index\nXUEXITONG_USERNAME=\nXUEXITONG_PASSWORD=\nLAST_SELECTED_REPOS=\nBROWSER_PATH=\n';
-      fs.writeFileSync(envPath, template);
+    // 现在主要使用 SQLite，初始化默认配置
+    const defaultSettings = {
+      BASE_REPO_DIR: '',
+      DEEPSEEK_API_KEY: '',
+      DEFAULT_USER: '',
+      XUEXITONG_NOTE_URL: 'https://note.chaoxing.com/pc/index',
+      XUEXITONG_USERNAME: '',
+      XUEXITONG_PASSWORD: '',
+      LAST_SELECTED_REPOS: '',
+      FOOL_MODE_SELECTED_REPOS: '',
+      BROWSER_PATH: '',
+      NOTIFICATION_SOUND_ENABLED: 'true',
+      SUCCESS_SOUND: 'success.mp3',
+      FAILURE_SOUND: 'failure.mp3',
+      SCHEDULE_ENABLED: 'false',
+      SCHEDULE_TIME: '18:00'
+    };
+
+    try {
+      Object.entries(defaultSettings).forEach(([key, value]) => {
+        if (getSetting(key) === null) {
+          setSetting(key, value);
+          process.env[key] = value;
+        }
+      });
       return { success: true };
+    } catch (error) {
+      return { success: false, message: '初始化配置失败: ' + error.message };
     }
-    return { success: false, message: '环境文件已存在' };
   });
 
   // 浏览器检测相关
@@ -137,6 +200,26 @@ function registerIpcHandlers() {
       }
     }
     return browsers;
+  });
+
+  // 音效相关
+  ipcMain.handle('api:listSounds', async () => {
+    try {
+      const soundDir = path.join(__dirname, '../frontend/public/sound');
+      if (!fs.existsSync(soundDir)) {
+        return [];
+      }
+      const files = fs.readdirSync(soundDir);
+      return files
+        .filter(file => file.endsWith('.mp3'))
+        .map(file => ({
+          name: file,
+          path: `/sound/${file}` // 前端可以通过这个路径直接访问 public 下的文件
+        }));
+    } catch (error) {
+      console.error('获取音效列表失败:', error);
+      return [];
+    }
   });
 
   // Git 相关
@@ -199,7 +282,18 @@ function registerIpcHandlers() {
   });
 
   // 学习通同步相关
-  ipcMain.handle('api:createXuexitongNote', async (event, { content, title }) => {
+  ipcMain.handle('api:createXuexitongNote', async (event, { content, title, headless = false }) => {
+    console.log(`[Backend] createXuexitongNote called. headless: ${headless}, lastUsedHeadless: ${lastUsedHeadless}`);
+
+    // 获取通知图标的可靠路径
+     const getNotifyIcon = () => {
+       const ico = path.resolve(__dirname, '../frontend/public/favicon.ico');
+       if (fs.existsSync(ico)) return ico;
+       const png = path.resolve(__dirname, '../frontend/public/favicon.png');
+       if (fs.existsSync(png)) return png;
+       return undefined;
+     };
+
     const targetUrl = process.env.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index';
     const username = process.env.XUEXITONG_USERNAME;
     const password = process.env.XUEXITONG_PASSWORD;
@@ -211,22 +305,22 @@ function registerIpcHandlers() {
 
     try {
       // 1. 启动或复用浏览器
-      // 如果路径发生变化，强制重启浏览器
+      // 检查浏览器是否需要重启（路径变化、无头模式变化或已断开连接）
+      const isConnected = browserContext && (browserInstance ? browserInstance.isConnected() : browserContext.browser()?.isConnected());
       const isPathChanged = lastUsedBrowserPath !== customBrowserPath;
-      
-      if (!browserContext || !browserContext.browser()?.isConnected() || isPathChanged) {
-        console.log(isPathChanged ? '浏览器路径已更改，正在重新启动...' : '正在启动或重新连接浏览器...');
+      const isHeadlessChanged = lastUsedHeadless !== headless;
+
+      if (!browserContext || !isConnected || isPathChanged || isHeadlessChanged) {
+        console.log(`[Backend] ${isHeadlessChanged ? '无头模式切换' : (isPathChanged ? '路径更改' : '启动新实例')}, headless: ${headless}`);
         
         try {
-          if (browserContext) {
-            await browserContext.close().catch(() => {});
-            browserContext = null;
-          }
+          await closeBrowser();
 
           lastUsedBrowserPath = customBrowserPath; // 更新记录
+          lastUsedHeadless = headless;           // 更新无头模式记录
           
           const launchOptions = {
-            headless: false,
+            headless: !!headless, // 确保是布尔值
             viewport: { width: 1280, height: 800 },
             args: [
               '--disable-blink-features=AutomationControlled',
@@ -236,16 +330,17 @@ function registerIpcHandlers() {
             ]
           };
 
+          if (headless) {
+            launchOptions.args.push('--headless=new');
+          }
+
           // 如果用户指定了本地浏览器路径，则使用它
           if (customBrowserPath && fs.existsSync(customBrowserPath)) {
             console.log(`使用自定义浏览器路径: ${customBrowserPath}`);
             launchOptions.executablePath = customBrowserPath;
             
-            // 使用本地浏览器时，通常不需要 launchPersistentContext，
-            // 除非用户想保存本地浏览器的 session。但根据需求“无痕模式”，
-            // 我们改用普通 launch + newContext
-            const browser = await chromium.launch(launchOptions);
-            browserContext = await browser.newContext({
+            browserInstance = await chromium.launch(launchOptions);
+            browserContext = await browserInstance.newContext({
               viewport: { width: 1280, height: 800 }
             });
           } else {
@@ -255,12 +350,16 @@ function registerIpcHandlers() {
               fs.mkdirSync(userDataDir, { recursive: true });
             }
             browserContext = await chromium.launchPersistentContext(userDataDir, launchOptions);
+            browserInstance = browserContext.browser(); // 对于 persistent context, browser() 可能返回 null 或 浏览器对象
           }
 
-          browserContext.on('close', () => {
-            console.log('浏览器上下文已关闭');
-            browserContext = null;
-          });
+          if (browserContext) {
+            browserContext.on('close', () => {
+              console.log('浏览器上下文已关闭');
+              browserContext = null;
+              browserInstance = null;
+            });
+          }
         } catch (launchError) {
           console.error('浏览器启动失败:', launchError);
           browserContext = null;
@@ -360,9 +459,9 @@ function registerIpcHandlers() {
         // 填充内容
         notePage.waitForSelector('div[contenteditable="true"].ProseMirror', { timeout: 5000 }).then(el =>
           el.evaluate((node, val) => {
-            node.innerHTML = `<p>${val.replace(/\n/g, '</p><p>')}</p>`;
+            node.innerHTML = val;
             node.dispatchEvent(new Event('input', { bubbles: true }));
-          }, content)
+          }, marked.parse(content))
         ).catch(async () => {
           // 备选方案：如果找不到编辑器，尝试 Tab 键快速填充
           await notePage.keyboard.press('Tab');
@@ -378,6 +477,31 @@ function registerIpcHandlers() {
     } catch (error) {
       console.error('学习通同步失败:', error);
       throw new Error('同步失败: ' + error.message);
+    }
+  });
+
+  // 系统通知相关
+  ipcMain.handle('api:showNotification', async (event, data) => {
+    try {
+      // 获取通知图标的可靠路径
+       const getNotifyIcon = () => {
+         const ico = path.resolve(__dirname, '../frontend/public/favicon.ico');
+         if (fs.existsSync(ico)) return ico;
+         const png = path.resolve(__dirname, '../frontend/public/favicon.png');
+         if (fs.existsSync(png)) return png;
+         return undefined;
+       };
+
+      new Notification({ 
+        title: data.title, 
+        body: data.body, 
+        silent: data.silent || false,
+        icon: getNotifyIcon()
+      }).show();
+      return { success: true };
+    } catch (err) {
+      console.error('Notification Error:', err);
+      return { success: false, error: err.message };
     }
   });
 }

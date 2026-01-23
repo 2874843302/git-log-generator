@@ -1,6 +1,48 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeImage } = require('electron');
 const path = require('path');
+
+// 设置应用名称（用于通知显示等）
+app.name = 'Git Log Generator';
+// 设置 Windows 的 AppUserModelId 以确保通知能正确关联图标和名称
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.gitlog.generator');
+}
+
 require('dotenv').config(); // 加载环境变量
+
+// 图标路径 - 增加多种路径探测以确保兼容性
+const getIconPath = () => {
+    // 强制使用最可靠的绝对路径
+    const baseDir = __dirname;
+    const paths = [
+        path.join(baseDir, 'frontend/public/favicon.ico'),
+        path.join(baseDir, 'frontend/dist/favicon.ico'),
+        path.join(baseDir, 'favicon.ico'),
+        path.join(process.cwd(), 'frontend/public/favicon.ico')
+    ];
+    for (const p of paths) {
+        const absolutePath = path.resolve(p);
+        if (require('fs').existsSync(absolutePath)) {
+            console.log('找到图标文件:', absolutePath);
+            return absolutePath;
+        }
+    }
+    return path.resolve(baseDir, 'frontend/public/favicon.ico');
+};
+
+const iconPath = getIconPath();
+let appIcon = nativeImage.createFromPath(iconPath);
+
+if (appIcon.isEmpty()) {
+    console.error('nativeImage 无法加载任何图标文件');
+}
+
+// 1. 先初始化数据库，因为它需要 app.getPath('userData')，这个在 app ready 前可能拿不到
+// 但其实 Electron 允许在 app ready 前获取某些路径
+const { initDatabase } = require('./backend/database');
+initDatabase(app.getPath('userData'));
+
+// 2. 再加载 ipcHandlers，因为它依赖数据库中的环境变量
 const { registerIpcHandlers, cleanup } = require('./backend/ipcHandlers');
 
 // 判定开发环境
@@ -13,9 +55,13 @@ let mainWindow;
  * 创建 Electron 窗口
  */
 function createWindow() {
+    // 检查图标是否存在
+    console.log('正在创建窗口，图标路径:', iconPath);
+    
     mainWindow = new BrowserWindow({
         width: 1300,
         height: 900,
+        icon: iconPath, 
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -23,6 +69,15 @@ function createWindow() {
         },
         title: 'Git Log Generator',
     });
+
+    // 如果 nativeImage 成功加载了对象，则补充调用 setIcon
+    if (appIcon && !appIcon.isEmpty()) {
+        try {
+            mainWindow.setIcon(appIcon);
+        } catch (e) {
+            console.error('setIcon 失败:', e);
+        }
+    }
 
     // 根据开发环境或生产环境加载 URL
     if (isDev) {

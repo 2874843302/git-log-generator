@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar } from 'lucide-react';
 
 const SettingsModal = ({ 
   isOpen, 
@@ -20,6 +20,16 @@ const SettingsModal = ({
   updateXuexitongPassword,
   browserPath,
   updateBrowserPath,
+  notificationSoundEnabled,
+  updateNotificationSoundEnabled,
+  successSound,
+  updateSuccessSound,
+  failureSound,
+  updateFailureSound,
+  scheduleEnabled,
+  updateScheduleEnabled,
+  scheduleTime,
+  updateScheduleTime,
   initEnv,
   loading,
   originPos 
@@ -30,12 +40,37 @@ const SettingsModal = ({
   const [localXuexitongUsername, setLocalXuexitongUsername] = useState(xuexitongUsername);
   const [localXuexitongPassword, setLocalXuexitongPassword] = useState(xuexitongPassword);
   const [localBrowserPath, setLocalBrowserPath] = useState(browserPath);
+  const [localScheduleTime, setLocalScheduleTime] = useState(scheduleTime);
   const [detectedBrowsers, setDetectedBrowsers] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [showXuexitongPwd, setShowXuexitongPwd] = useState(false);
   const [isXuexitongOpen, setIsXuexitongOpen] = useState(false);
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
+  const [isSoundOpen, setIsSoundOpen] = useState(false);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [soundList, setSoundList] = useState([]);
+  const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchSounds();
+    }
+  }, [isOpen]);
+
+  const fetchSounds = async () => {
+    try {
+      const sounds = await api.listSounds();
+      setSoundList(sounds);
+    } catch (err) {
+      console.error('获取音效列表失败', err);
+    }
+  };
+
+  const playPreview = (soundPath) => {
+    const audio = new Audio(soundPath);
+    audio.play().catch(err => console.error('播放预览失败', err));
+  };
 
   useEffect(() => {
     setLocalApiKey(apiKey);
@@ -60,6 +95,10 @@ const SettingsModal = ({
   useEffect(() => {
     setLocalBrowserPath(browserPath);
   }, [browserPath]);
+
+  useEffect(() => {
+    setLocalScheduleTime(scheduleTime);
+  }, [scheduleTime]);
 
   const handleDetectBrowsers = async () => {
     try {
@@ -97,6 +136,11 @@ const SettingsModal = ({
   const handleSaveXuexitongCreds = () => {
     updateXuexitongUsername(localXuexitongUsername);
     updateXuexitongPassword(localXuexitongPassword);
+  };
+
+  const handleSaveScheduleTime = () => {
+    if (!localScheduleTime) return;
+    updateScheduleTime(localScheduleTime);
   };
 
   return (
@@ -411,7 +455,160 @@ const SettingsModal = ({
             </AnimatePresence>
           </section>
 
-          {/* 6. API 密钥 */}
+          {/* 6. 音效设置 */}
+          <section className="space-y-3">
+            <button 
+              onClick={() => setIsSoundOpen(!isSoundOpen)}
+              className="w-full flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
+                <Volume2 size={14} className={isSoundOpen ? "text-blue-500" : ""} />
+                <span>音效反馈设置</span>
+              </div>
+              {isSoundOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+            </button>
+
+            <AnimatePresence>
+              {isSoundOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 space-y-4 mt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-gray-700">启用通知音效</span>
+                      <button 
+                        onClick={() => updateNotificationSoundEnabled(!notificationSoundEnabled)}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${notificationSoundEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      >
+                        <motion.div 
+                          animate={{ x: notificationSoundEnabled ? 22 : 2 }}
+                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                        />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase">成功音效</label>
+                      <div className="flex items-center gap-2">
+                        <select 
+                          value={successSound}
+                          onChange={(e) => updateSuccessSound(e.target.value)}
+                          className="flex-1 px-4 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 appearance-none"
+                        >
+                          {soundList.map(sound => (
+                            <option key={sound.name} value={sound.name}>{sound.name}</option>
+                          ))}
+                        </select>
+                        <button 
+                          onClick={() => playPreview(`/sound/${successSound}`)}
+                          className="p-2 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-200 transition-colors"
+                          title="试听"
+                        >
+                          <Play size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase">失败音效</label>
+                      <div className="flex items-center gap-2">
+                        <select 
+                          value={failureSound}
+                          onChange={(e) => updateFailureSound(e.target.value)}
+                          className="flex-1 px-4 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 appearance-none"
+                        >
+                          {soundList.map(sound => (
+                            <option key={sound.name} value={sound.name}>{sound.name}</option>
+                          ))}
+                        </select>
+                        <button 
+                          onClick={() => playPreview(`/sound/${failureSound}`)}
+                          className="p-2 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-200 transition-colors"
+                          title="试听"
+                        >
+                          <Play size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+
+          {/* 7. 定时任务设置 */}
+          <section className="space-y-3">
+            <button 
+              onClick={() => setIsScheduleOpen(!isScheduleOpen)}
+              className="w-full flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
+                <Clock size={14} className={isScheduleOpen ? "text-blue-500" : ""} />
+                <span>自动任务设置</span>
+              </div>
+              {isScheduleOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+            </button>
+
+            <AnimatePresence>
+              {isScheduleOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-4 space-y-4 mt-2">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-bold text-gray-700 block">启用每日自动同步</span>
+                        <p className="text-[10px] text-gray-400">在设定时间自动生成今日日志并同步到学习通</p>
+                      </div>
+                      <button 
+                        onClick={() => updateScheduleEnabled(!scheduleEnabled)}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${scheduleEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      >
+                        <motion.div 
+                          animate={{ x: scheduleEnabled ? 22 : 2 }}
+                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                        />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-blue-600 uppercase">触发时间 (每天)</label>
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input 
+                            type="time"
+                            value={localScheduleTime}
+                            onChange={(e) => setLocalScheduleTime(e.target.value)}
+                            className="w-full px-4 py-2 bg-white border border-blue-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+                        </div>
+                        <button 
+                          onClick={handleSaveScheduleTime}
+                          disabled={localScheduleTime === scheduleTime}
+                          className={`p-2 rounded-xl transition-all ${
+                            localScheduleTime === scheduleTime 
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-sm shadow-blue-200'
+                          }`}
+                          title="保存时间"
+                        >
+                          <Check size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+
+          {/* 8. API 密钥 */}
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
               <Key size={14} />
