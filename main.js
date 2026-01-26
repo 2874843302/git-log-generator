@@ -37,16 +37,7 @@ if (appIcon.isEmpty()) {
     console.error('nativeImage 无法加载任何图标文件');
 }
 
-// 1. 先初始化数据库，因为它需要 app.getPath('userData')，这个在 app ready 前可能拿不到
-// 但其实 Electron 允许在 app ready 前获取某些路径
-const { initDatabase } = require('./backend/database');
-initDatabase(app.getPath('userData'));
-
-// 2. 再加载 ipcHandlers，因为它依赖数据库中的环境变量
-const { registerIpcHandlers, cleanup } = require('./backend/ipcHandlers');
-const { initUpdater } = require('./updater');
-
-// 判定开发环境
+// 1. 判定开发环境
 const isDev = !app.isPackaged;
 
 // 保持对窗口对象的全局引用
@@ -62,6 +53,8 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1300,
         height: 900,
+        show: false, // 初始不显示，防止白屏
+        backgroundColor: '#ffffff', // 设置背景色，使显示更平滑
         icon: iconPath, 
         webPreferences: {
             nodeIntegration: false,
@@ -89,6 +82,11 @@ function createWindow() {
         mainWindow.loadFile(path.join(__dirname, 'frontend/dist/index.html'));
     }
 
+    // 优雅显示：等页面准备好后再显示窗口，解决白屏问题
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+    });
+
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -96,12 +94,18 @@ function createWindow() {
 
 // 当 Electron 初始化完成并准备好创建浏览器窗口时调用
 app.whenReady().then(() => {
-    // 注册 IPC 处理函数替代 Express 后端
+    // 初始化数据库
+    const { initDatabase } = require('./backend/database');
+    initDatabase(app.getPath('userData'));
+
+    // 注册 IPC 处理函数
+    const { registerIpcHandlers } = require('./backend/ipcHandlers');
     registerIpcHandlers();
     
     createWindow();
 
     // 初始化更新程序
+    const { initUpdater } = require('./updater');
     initUpdater(mainWindow);
 
     app.on('activate', function () {
@@ -114,6 +118,7 @@ app.whenReady().then(() => {
 // 当所有窗口关闭时退出应用
 app.on('window-all-closed', async () => {
     console.log('所有窗口已关闭，正在执行清理并退出...');
+    const { cleanup } = require('./backend/ipcHandlers');
     await cleanup();
     if (process.platform !== 'darwin') {
         app.quit();
@@ -122,6 +127,7 @@ app.on('window-all-closed', async () => {
 
 // 在应用退出前确保清理
 app.on('will-quit', async () => {
+    const { cleanup } = require('./backend/ipcHandlers');
     await cleanup();
 });
 

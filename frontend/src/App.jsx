@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from './services/api';
 import dayjs from 'dayjs';
-import { GitCommit, AlertCircle, Clock } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
+import { GitCommit, AlertCircle, Clock, RefreshCw } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 // 导入拆分后的组件
 import ConfigPanel from './components/ConfigPanel';
@@ -96,7 +96,8 @@ function App() {
 
     const removeProgressListener = window.electron.receive('download-progress', (progress) => {
       setUpdateStatus('downloading');
-      setDownloadProgress(Math.floor(progress.percent));
+      const percent = progress?.percent;
+      setDownloadProgress(typeof percent === 'number' ? Math.floor(percent) : 0);
     });
 
     const removeDownloadedListener = window.electron.receive('update-downloaded', () => {
@@ -104,7 +105,7 @@ function App() {
     });
 
     const removeErrorListener = window.electron.receive('update-error', (err) => {
-      setUpdateError(err);
+      setUpdateError(typeof err === 'string' ? err : (err?.message || String(err)));
       setUpdateStatus('error');
     });
 
@@ -806,7 +807,16 @@ function App() {
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
-            <span>Version 2.2.0</span>
+            <div className="flex items-center gap-2">
+              <span>Version 2.2.1</span>
+              <button 
+                onClick={() => window.electron.send('check-for-update')}
+                className="hover:text-blue-500 transition-colors cursor-pointer"
+                title="检查更新"
+              >
+                <RefreshCw size={10} className={updateStatus === 'checking' ? 'animate-spin' : ''} />
+              </button>
+            </div>
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
               API Connected
@@ -938,7 +948,12 @@ function App() {
       {/* 更新提醒弹窗 */}
       <AnimatePresence>
         {updateStatus !== 'idle' && updateStatus !== 'checking' && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
             <motion.div 
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -952,7 +967,7 @@ function App() {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">版本更新</h3>
-                    <p className="text-xs text-gray-500">发现新版本 {updateInfo?.version}</p>
+                    <p className="text-xs text-gray-500">发现新版本 {updateInfo?.version || '未知'}</p>
                   </div>
                 </div>
 
@@ -961,7 +976,11 @@ function App() {
                     <>
                       <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 max-h-32 overflow-y-auto">
                         <p className="font-medium mb-1">更新内容：</p>
-                        <div dangerouslySetInnerHTML={{ __html: updateInfo?.releaseNotes || '优化性能与修复已知问题' }}></div>
+                        <div dangerouslySetInnerHTML={{ 
+                          __html: Array.isArray(updateInfo?.releaseNotes) 
+                            ? updateInfo.releaseNotes.map(n => typeof n === 'string' ? n : (n?.note || '')).filter(Boolean).join('<br/>')
+                            : (typeof updateInfo?.releaseNotes === 'string' ? updateInfo.releaseNotes : '优化性能与修复已知问题')
+                        }}></div>
                       </div>
                       <div className="flex gap-3">
                         <button 
@@ -1013,22 +1032,39 @@ function App() {
 
                   {updateStatus === 'error' && (
                     <>
-                      <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" />
-                        更新出错: {updateError}
+                      <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm space-y-2">
+                        <div className="flex items-center gap-2 font-medium">
+                          <AlertCircle className="w-4 h-4" />
+                          更新失败
+                        </div>
+                        <p className="text-xs opacity-80">{updateError}</p>
                       </div>
-                      <button 
-                        onClick={() => setUpdateStatus('idle')}
-                        className="w-full px-4 py-2 rounded-xl bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200 transition-all"
-                      >
-                        关闭
-                      </button>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => setUpdateStatus('idle')}
+                          className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                        >
+                          关闭
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setUpdateStatus('checking');
+                            window.electron.send('check-for-update');
+                          }}
+                          className="flex-1 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
+                        >
+                          重试
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-center text-gray-400">
+                        如果持续失败，请前往 <a href="https://github.com/2874843302/git-log-generator/releases" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">GitHub Releases</a> 手动下载
+                      </p>
                     </>
                   )}
                 </div>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
