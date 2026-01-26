@@ -15,9 +15,9 @@ const LogGenerator = ({
   setReferenceLog,
   generateLog, 
   loading,
-  openTomorrowPlanModal,
-  tomorrowPlanPrompt,
-  setTomorrowPlanPrompt,
+  openSupplementModal,
+  supplementPrompt,
+  setSupplementPrompt,
   openTemplatePreview
 }) => {
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
@@ -150,7 +150,7 @@ const LogGenerator = ({
           <label className="text-[10px] font-bold text-gray-400 block uppercase">附加板块</label>
           <div className="grid grid-cols-1 gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-100">
             {[
-              { id: 'includeTomorrow', label: '明日计划', color: 'bg-blue-400' },
+              { id: 'includeTomorrow', label: '补充内容', color: 'bg-blue-400' },
               { id: 'includeProblems', label: '遇到的问题', color: 'bg-red-400' },
               { id: 'includeReflections', label: '心得收获', color: 'bg-yellow-400' }
             ].map(opt => (
@@ -163,11 +163,11 @@ const LogGenerator = ({
                       onClick={(e) => {
                         e.preventDefault();
                         const rect = e.currentTarget.getBoundingClientRect();
-                        openTomorrowPlanModal({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+                        openSupplementModal({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
                       }}
                       className="ml-1 text-[10px] text-blue-500 hover:text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 animate-pulse hover:animate-none"
                     >
-                      {tomorrowPlanPrompt ? '已描述' : '点击描述'}
+                      {supplementPrompt ? '已补充' : '点击补充'}
                     </button>
                   )}
                 </span>

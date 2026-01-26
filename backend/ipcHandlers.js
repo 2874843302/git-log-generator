@@ -1,4 +1,4 @@
-const { ipcMain, Notification } = require('electron');
+const { ipcMain, Notification, app } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -521,6 +521,30 @@ function registerIpcHandlers() {
     } catch (err) {
       console.error('Notification Error:', err);
       return { success: false, error: err.message };
+    }
+  });
+
+  // 开机自启相关
+  ipcMain.handle('api:getAutoLaunch', async () => {
+    try {
+      const settings = app.getLoginItemSettings();
+      return settings.openAtLogin;
+    } catch (error) {
+      console.error('获取开机自启状态失败:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('api:setAutoLaunch', async (event, enable) => {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: enable,
+        path: process.execPath, // 显式指定可执行文件路径
+      });
+      return true;
+    } catch (error) {
+      console.error('设置开机自启失败:', error);
+      return false;
     }
   });
 }

@@ -4,17 +4,19 @@ import { X, Zap, Check, Loader2, AlertCircle, Github, Search, Calendar } from 'l
 import api from '../services/api';
 import dayjs from 'dayjs';
 
-const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
+const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos }) => {
   const [repos, setRepos] = useState([]);
   const [selectedRepos, setSelectedRepos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'));
+  const [supplement, setSupplement] = useState('');
   const [options, setOptions] = useState({
     includeProblems: true,
     includeReflections: true,
-    includeDiffContent: true
+    includeDiffContent: true,
+    includeTomorrow: false
   });
 
   useEffect(() => {
@@ -42,17 +44,27 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
       
       setRepos(allRepos);
 
+      // 加载补充内容
+      if (config.SUPPLEMENT_PROMPT) {
+        setSupplement(config.SUPPLEMENT_PROMPT);
+      }
+
       // 加载上次选择的仓库
       const lastSelected = config.FOOL_MODE_SELECTED_REPOS;
-      if (lastSelected) {
-        const savedPaths = lastSelected.split(',');
-        // 过滤掉已经不存在的路径
-        const validPaths = savedPaths.filter(path => 
-          allRepos.some(r => r.path === path)
-        );
-        setSelectedRepos(validPaths.length > 0 ? validPaths : allRepos.map(r => r.path));
+      if (lastSelected !== undefined && lastSelected !== null) {
+        // 如果记录不为空字符串，则解析并过滤有效路径
+        if (lastSelected.trim() !== "") {
+          const savedPaths = lastSelected.split(',');
+          const validPaths = savedPaths.filter(path => 
+            allRepos.some(r => r.path === path)
+          );
+          setSelectedRepos(validPaths);
+        } else {
+          // 明确记录为空（全部取消选择），保持为空
+          setSelectedRepos([]);
+        }
       } else {
-        // 默认全选
+        // 初次使用，默认全选
         setSelectedRepos(allRepos.map(r => r.path));
       }
     } catch (err) {
@@ -64,13 +76,20 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
 
   // 监听选择变化并保存
   useEffect(() => {
-    if (!loading && selectedRepos.length > 0) {
+    if (!loading) {
       const timer = setTimeout(() => {
-        api.updateConfig({ FOOL_MODE_SELECTED_REPOS: selectedRepos.join(',') });
+        api.updateConfig({ 
+          FOOL_MODE_SELECTED_REPOS: selectedRepos.join(','),
+          SUPPLEMENT_PROMPT: supplement
+        });
+        // 通知父组件仓库列表已变动，以便定时任务同步
+        if (onReposChange) {
+          onReposChange(selectedRepos);
+        }
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [selectedRepos, loading]);
+  }, [selectedRepos, supplement, loading, onReposChange]);
 
   const toggleRepo = (path) => {
     setSelectedRepos(prev => 
@@ -270,17 +289,57 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
                     </div>
                     <span className="text-xs font-bold text-gray-600 group-hover:text-blue-600 transition-colors">深度代码分析</span>
                   </label>
-                </div>
-              </div>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                     <div className="relative flex items-center justify-center">
+                       <input 
+                         type="checkbox"
+                         checked={options.includeTomorrow}
+                         onChange={(e) => setOptions({ ...options, includeTomorrow: e.target.checked })}
+                         className="peer appearance-none w-5 h-5 border-2 border-gray-200 rounded-lg checked:border-blue-500 checked:bg-blue-500 transition-all"
+                       />
+                       <Check size={12} className="absolute text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
+                     </div>
+                     <span className="text-xs font-bold text-gray-600 group-hover:text-blue-600 transition-colors">包含补充内容</span>
+                   </label>
+                 </div>
+               </div>
+  
+               {/* 补充内容输入 */}
+               <AnimatePresence>
+                 {options.includeTomorrow && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                          <Zap size={10} className="text-blue-500" />
+                          补充内容 (自学/Demo/练手)
+                        </p>
+                        <span className="text-[9px] text-blue-400 font-bold bg-blue-100/50 px-2 py-0.5 rounded-full">AI 将自动润色</span>
+                      </div>
+                      <textarea
+                        value={supplement}
+                        onChange={(e) => setSupplement(e.target.value)}
+                        placeholder="输入今日的自学内容、练手 Demo 或其他补充素材，AI 会将其润色并整合进日志..."
+                        className="w-full bg-white/80 border border-blue-200 rounded-xl p-3 text-xs min-h-[80px] focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all resize-none custom-scrollbar text-gray-700"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* 操作按钮 */}
               <div className="pt-2 space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                   <button
-                    disabled={selectedRepos.length === 0}
-                    onClick={() => onGenerate(selectedRepos, 'concise', selectedDate, options)}
+                    disabled={selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())}
+                    onClick={() => onGenerate(selectedRepos, 'concise', selectedDate, { ...options, supplementPrompt: supplement })}
                     className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                      selectedRepos.length === 0
+                      selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 shadow-lg shadow-blue-500/10'
                     }`}
@@ -289,10 +348,10 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, originPos }) => {
                     立即生成极简日志
                   </button>
                   <button
-                    disabled={selectedRepos.length === 0}
-                    onClick={() => onGenerate(selectedRepos, 'daily', selectedDate, options)}
+                    disabled={selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())}
+                    onClick={() => onGenerate(selectedRepos, 'daily', selectedDate, { ...options, supplementPrompt: supplement })}
                     className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                      selectedRepos.length === 0
+                      selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/30 hover:shadow-blue-500/40 hover:-translate-y-0.5'
                     }`}

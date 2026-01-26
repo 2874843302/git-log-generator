@@ -32,7 +32,9 @@ const SettingsModal = ({
   updateScheduleTime,
   initEnv,
   loading,
-  originPos 
+  originPos,
+  autoLaunchEnabled,
+  updateAutoLaunchEnabled
 }) => {
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localDefaultUser, setLocalDefaultUser] = useState(defaultUser);
@@ -45,10 +47,7 @@ const SettingsModal = ({
   const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [showXuexitongPwd, setShowXuexitongPwd] = useState(false);
-  const [isXuexitongOpen, setIsXuexitongOpen] = useState(false);
-  const [isBrowserOpen, setIsBrowserOpen] = useState(false);
-  const [isSoundOpen, setIsSoundOpen] = useState(false);
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('general'); // general, automation, system
   const [soundList, setSoundList] = useState([]);
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
 
@@ -187,108 +186,201 @@ const SettingsModal = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* 1. 环境初始化 */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
-                <RefreshCw size={14} />
-                <span>环境初始化</span>
-              </div>
-            </div>
-            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between gap-4">
-              <div className="flex-1">
-                <p className="text-[11px] text-blue-700 font-medium leading-relaxed">
-                  一键复制 .env.example 为 .env，自动准备环境配置文件。
-                </p>
-              </div>
-              <button 
-                onClick={initEnv}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95 shrink-0"
-              >
-                {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                立即初始化
-              </button>
-            </div>
-          </section>
-
-          {/* 2. 工作根目录 */}
-          <section className="space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
-              <Folder size={14} />
-              <span>工作根目录</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs text-gray-600 font-medium truncate">
-                {baseDir || '未设置基础目录'}
-              </div>
-              <button 
-                onClick={updateBaseDir}
-                className="p-3 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-blue-100 bg-white shadow-sm shrink-0"
-                title="选择基础目录"
-              >
-                <Folder size={18} />
-              </button>
-            </div>
-          </section>
-
-          {/* 3. 默认用户 */}
-          <section className="space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
-              <User size={14} />
-              <span>默认用户 (拼音小写)</span>
-            </div>
-            <div className="space-y-3">
-              <div className="relative">
-                <input 
-                  type="text"
-                  value={localDefaultUser}
-                  onChange={(e) => setLocalDefaultUser(e.target.value)}
-                  placeholder="例如: zhangsan"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono"
-                />
-                <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              </div>
-              <button 
-                onClick={handleSaveUser}
-                disabled={localDefaultUser === defaultUser}
-                className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                  localDefaultUser === defaultUser 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
-                }`}
-              >
-                <Check size={16} />
-                保存默认用户
-              </button>
-            </div>
-          </section>
-
-          {/* 4. 学习通配置 */}
-          <section className="space-y-3">
-            <button 
-              onClick={() => setIsXuexitongOpen(!isXuexitongOpen)}
-              className="w-full flex items-center justify-between group"
+        {/* 标签页导航 */}
+        <div className="flex border-b border-gray-100 bg-gray-50/50">
+          {[
+            { id: 'general', label: '基础配置', icon: Settings },
+            { id: 'automation', label: '同步任务', icon: Share2 },
+            { id: 'system', label: '系统交互', icon: ShieldCheck },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-bold transition-all relative ${
+                activeTab === tab.id ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+              }`}
             >
-              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
-                <Share2 size={14} className={isXuexitongOpen ? "text-blue-500" : ""} />
-                <span>学习通自动化配置</span>
-                <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-[9px] text-gray-400 rounded-md font-normal lowercase tracking-normal">可选</span>
-              </div>
-              {isXuexitongOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-            </button>
-
-            <AnimatePresence>
-              {isXuexitongOpen && (
+              <tab.icon size={14} />
+              {tab.label}
+              {activeTab === tab.id && (
                 <motion.div 
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 space-y-4 mt-1">
+                  layoutId="activeTab"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"
+                />
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          <AnimatePresence mode="wait">
+            {activeTab === 'general' && (
+              <motion.div
+                key="general"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                {/* 0. 系统设置 - 开机自启 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Settings size={14} />
+                    <span>系统偏好</span>
+                  </div>
+                  <div className="bg-gray-50/50 border border-gray-100 rounded-2xl p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-gray-700">开机自动启动</span>
+                        <p className="text-[10px] text-gray-400">在 Windows 启动时自动运行软件</p>
+                      </div>
+                      <button 
+                        onClick={() => updateAutoLaunchEnabled(!autoLaunchEnabled)}
+                        className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
+                          autoLaunchEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                            autoLaunchEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 1. 环境初始化 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <RefreshCw size={14} />
+                    <span>环境初始化</span>
+                  </div>
+                  <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="text-[11px] text-blue-700 font-medium leading-relaxed">
+                        一键准备环境配置文件。
+                      </p>
+                    </div>
+                    <button 
+                      onClick={initEnv}
+                      disabled={loading}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95 shrink-0"
+                    >
+                      {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                      初始化
+                    </button>
+                  </div>
+                </section>
+
+                {/* 2. 工作根目录 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Folder size={14} />
+                    <span>工作根目录</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs text-gray-600 font-medium truncate">
+                      {baseDir || '未设置基础目录'}
+                    </div>
+                    <button 
+                      onClick={updateBaseDir}
+                      className="p-3 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-blue-100 bg-white shadow-sm shrink-0"
+                    >
+                      <Folder size={18} />
+                    </button>
+                  </div>
+                </section>
+
+                {/* 3. 默认用户 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <User size={14} />
+                    <span>默认用户 (拼音小写)</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        value={localDefaultUser}
+                        onChange={(e) => setLocalDefaultUser(e.target.value)}
+                        placeholder="例如: zhangsan"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono"
+                      />
+                      <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    </div>
+                    <button 
+                      onClick={handleSaveUser}
+                      disabled={localDefaultUser === defaultUser}
+                      className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                        localDefaultUser === defaultUser 
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
+                      }`}
+                    >
+                      <Check size={16} />
+                      保存默认用户
+                    </button>
+                  </div>
+                </section>
+
+                {/* 8. API 密钥 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Key size={14} />
+                    <span>DeepSeek API Key</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <input 
+                        type={showKey ? "text" : "password"}
+                        value={localApiKey}
+                        onChange={(e) => setLocalApiKey(e.target.value)}
+                        placeholder="在此输入您的 API 密钥..."
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-12 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono"
+                      />
+                      <ShieldCheck size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <button 
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                      >
+                        {showKey ? <EyeOff size={16} className="text-blue-500" /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <button 
+                      onClick={handleSaveKey}
+                      disabled={localApiKey === apiKey}
+                      className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                        localApiKey === apiKey 
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
+                      }`}
+                    >
+                      <Check size={16} />
+                      保存密钥配置
+                    </button>
+                  </div>
+                </section>
+              </motion.div>
+            )}
+
+            {activeTab === 'automation' && (
+              <motion.div
+                key="automation"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                {/* 4. 学习通配置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Share2 size={14} />
+                    <span>学习通自动化配置</span>
+                  </div>
+                  <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 space-y-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-indigo-600 uppercase">笔记页面 URL</label>
                       <div className="flex gap-2">
@@ -355,34 +447,76 @@ const SettingsModal = ({
                       </div>
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </section>
+                </section>
 
-          {/* 5. 浏览器设置 */}
-          <section className="space-y-3">
-            <button 
-              onClick={() => setIsBrowserOpen(!isBrowserOpen)}
-              className="w-full flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
-                <Eye size={14} className={isBrowserOpen ? "text-blue-500" : ""} />
-                <span>浏览器路径配置</span>
-                <span className="ml-2 px-1.5 py-0.5 bg-blue-50 text-[9px] text-blue-500 rounded-md font-normal lowercase tracking-normal">无痕模式</span>
-              </div>
-              {isBrowserOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
-            </button>
+                {/* 7. 定时任务设置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Clock size={14} />
+                    <span>自动任务设置</span>
+                  </div>
+                  <div className="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-bold text-gray-700 block">启用每日自动同步</span>
+                        <p className="text-[10px] text-gray-400">在设定时间自动生成今日日志并同步到学习通</p>
+                      </div>
+                      <button 
+                        onClick={() => updateScheduleEnabled(!scheduleEnabled)}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${scheduleEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      >
+                        <motion.div 
+                          animate={{ x: scheduleEnabled ? 22 : 2 }}
+                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                        />
+                      </button>
+                    </div>
 
-            <AnimatePresence>
-              {isBrowserOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-4 space-y-4 mt-2">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-blue-600 uppercase">触发时间 (每天)</label>
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input 
+                            type="time"
+                            value={localScheduleTime}
+                            onChange={(e) => setLocalScheduleTime(e.target.value)}
+                            className="w-full px-4 py-2 bg-white border border-blue-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+                        </div>
+                        <button 
+                          onClick={handleSaveScheduleTime}
+                          disabled={localScheduleTime === scheduleTime}
+                          className={`p-2 rounded-xl transition-all ${
+                            localScheduleTime === scheduleTime 
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-sm shadow-blue-200'
+                          }`}
+                        >
+                          <Check size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </motion.div>
+            )}
+
+            {activeTab === 'system' && (
+              <motion.div
+                key="system"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                {/* 5. 浏览器设置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Eye size={14} />
+                    <span>浏览器路径配置</span>
+                  </div>
+                  <div className="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-4 space-y-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-blue-600 uppercase">浏览器可执行文件路径</label>
                       <div className="flex items-center gap-2">
@@ -446,38 +580,17 @@ const SettingsModal = ({
                           </div>
                         )}
                       </div>
-                      <p className="text-[9px] text-gray-400 leading-relaxed italic">
-                        提示：留空将使用内置浏览器。建议配置本地 Chrome 或 Edge 并自动开启无痕模式操作。
-                      </p>
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </section>
+                </section>
 
-          {/* 6. 音效设置 */}
-          <section className="space-y-3">
-            <button 
-              onClick={() => setIsSoundOpen(!isSoundOpen)}
-              className="w-full flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
-                <Volume2 size={14} className={isSoundOpen ? "text-blue-500" : ""} />
-                <span>音效反馈设置</span>
-              </div>
-              {isSoundOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
-            </button>
-
-            <AnimatePresence>
-              {isSoundOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 space-y-4 mt-2">
+                {/* 6. 音效设置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Volume2 size={14} />
+                    <span>音效反馈设置</span>
+                  </div>
+                  <div className="bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-gray-700">启用通知音效</span>
                       <button 
@@ -506,7 +619,6 @@ const SettingsModal = ({
                         <button 
                           onClick={() => playPreview(successSound)}
                           className="p-2 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-200 transition-colors"
-                          title="试听"
                         >
                           <Play size={16} />
                         </button>
@@ -528,125 +640,16 @@ const SettingsModal = ({
                         <button 
                           onClick={() => playPreview(failureSound)}
                           className="p-2 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-200 transition-colors"
-                          title="试听"
                         >
                           <Play size={16} />
                         </button>
                       </div>
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </section>
-
-          {/* 7. 定时任务设置 */}
-          <section className="space-y-3">
-            <button 
-              onClick={() => setIsScheduleOpen(!isScheduleOpen)}
-              className="w-full flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
-                <Clock size={14} className={isScheduleOpen ? "text-blue-500" : ""} />
-                <span>自动任务设置</span>
-              </div>
-              {isScheduleOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
-            </button>
-
-            <AnimatePresence>
-              {isScheduleOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-4 space-y-4 mt-2">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-bold text-gray-700 block">启用每日自动同步</span>
-                        <p className="text-[10px] text-gray-400">在设定时间自动生成今日日志并同步到学习通</p>
-                      </div>
-                      <button 
-                        onClick={() => updateScheduleEnabled(!scheduleEnabled)}
-                        className={`w-10 h-5 rounded-full relative transition-colors ${scheduleEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
-                      >
-                        <motion.div 
-                          animate={{ x: scheduleEnabled ? 22 : 2 }}
-                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
-                        />
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-blue-600 uppercase">触发时间 (每天)</label>
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <input 
-                            type="time"
-                            value={localScheduleTime}
-                            onChange={(e) => setLocalScheduleTime(e.target.value)}
-                            className="w-full px-4 py-2 bg-white border border-blue-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                          />
-                        </div>
-                        <button 
-                          onClick={handleSaveScheduleTime}
-                          disabled={localScheduleTime === scheduleTime}
-                          className={`p-2 rounded-xl transition-all ${
-                            localScheduleTime === scheduleTime 
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-sm shadow-blue-200'
-                          }`}
-                          title="保存时间"
-                        >
-                          <Check size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </section>
-
-          {/* 8. API 密钥 */}
-          <section className="space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
-              <Key size={14} />
-              <span>DeepSeek API Key</span>
-            </div>
-            <div className="space-y-3">
-              <div className="relative">
-                <input 
-                  type={showKey ? "text" : "password"}
-                  value={localApiKey}
-                  onChange={(e) => setLocalApiKey(e.target.value)}
-                  placeholder="在此输入您的 API 密钥..."
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-12 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono"
-                />
-                <ShieldCheck size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <button 
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
-                  title={showKey ? "隐藏密钥" : "显示密钥"}
-                >
-                  {showKey ? <EyeOff size={16} className="text-blue-500" /> : <Eye size={16} />}
-                </button>
-              </div>
-              <button 
-                onClick={handleSaveKey}
-                disabled={localApiKey === apiKey}
-                className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                  localApiKey === apiKey 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
-                }`}
-              >
-                <Check size={16} />
-                保存密钥配置
-              </button>
-            </div>
-          </section>
+                </section>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* 底部说明 */}

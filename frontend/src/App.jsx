@@ -11,7 +11,7 @@ import CommitVisualizer from './components/CommitVisualizer';
 import MarkdownPreview from './components/MarkdownPreview';
 import FolderPickerModal from './components/FolderPickerModal';
 import BranchPickerModal from './components/BranchPickerModal';
-import TomorrowPlanModal from './components/TomorrowPlanModal';
+import SupplementModal from './components/SupplementModal';
 import TemplatePreviewModal from './components/TemplatePreviewModal';
 import SettingsModal from './components/SettingsModal';
 import FoolModeModal from './components/FoolModeModal';
@@ -35,7 +35,7 @@ function App() {
   const [customPrompt, setCustomPrompt] = useState('');
   const [referenceLog, setReferenceLog] = useState('');
   const [templateOptions, setTemplateOptions] = useState({
-    includeTomorrow: true,
+    includeTomorrow: false,
     includeReflections: false,
     includeProblems: true,
     includeDiffContent: false
@@ -54,14 +54,15 @@ function App() {
   const [successSound, setSuccessSound] = useState('yeah.mp3');
   const [failureSound, setFailureSound] = useState('啊咧？.mp3');
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [countdown, setCountdown] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerPos, setBranchPickerPos] = useState({ x: '50%', y: '50%' });
-  const [tomorrowPlanModalOpen, setTomorrowPlanModalOpen] = useState(false);
-  const [tomorrowPlanModalPos, setTomorrowPlanModalPos] = useState(null);
-  const [tomorrowPlanPrompt, setTomorrowPlanPrompt] = useState('');
+  const [supplementModalOpen, setSupplementModalOpen] = useState(false);
+  const [supplementModalPos, setSupplementModalPos] = useState(null);
+  const [supplementPrompt, setSupplementPrompt] = useState('');
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
   const [templatePreviewPos, setTemplatePreviewPos] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
@@ -191,8 +192,10 @@ function App() {
     setError('');
     try {
       const targetLogs = actualLogs || logs.filter(log => !ignoredHashes.has(log.hash));
-      if (targetLogs.length === 0) {
-        setError('没有可供生成的有效提交记录（所有记录已被忽略或未获取）');
+      const hasSupplement = (customOptions && customOptions.supplementPrompt) || supplementPrompt;
+      
+      if (targetLogs.length === 0 && !hasSupplement) {
+        setError('没有可供生成的有效提交记录，且未填写补充内容');
         setLoading(false);
         return;
       }
@@ -208,7 +211,7 @@ function App() {
         repoPaths: customRepoPaths || repoPaths,
         templateKey: customTemplate || selectedTemplate,
         customPrompt: customPrompt,
-        tomorrowPlanPrompt: tomorrowPlanPrompt,
+        tomorrowPlanPrompt: (customOptions && customOptions.supplementPrompt !== undefined) ? customOptions.supplementPrompt : supplementPrompt,
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
         options: customOptions || templateOptions,
         apiKey: apiKey // 确保传递 API Key
@@ -232,7 +235,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, tomorrowPlanPrompt, referenceLog, templateOptions, apiKey]);
+  }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, supplementPrompt, referenceLog, templateOptions, apiKey]);
 
   /**
    * 傻瓜模式一键生成逻辑
@@ -251,7 +254,12 @@ function App() {
     
     // 保存傻瓜模式选择的仓库到数据库
     try {
-      await api.updateConfig({ FOOL_MODE_SELECTED_REPOS: selectedRepos.join(',') });
+      const configToUpdate = { FOOL_MODE_SELECTED_REPOS: selectedRepos.join(',') };
+      if (customOptions && customOptions.supplementPrompt !== undefined) {
+        configToUpdate.SUPPLEMENT_PROMPT = customOptions.supplementPrompt;
+        setSupplementPrompt(customOptions.supplementPrompt);
+      }
+      await api.updateConfig(configToUpdate);
       setFoolModeRepos(selectedRepos);
     } catch (err) {
       console.error('[傻瓜模式] 保存仓库配置失败:', err);
@@ -260,30 +268,40 @@ function App() {
     // 2. 获取日志
     console.log('[傻瓜模式] 正在获取 Git 日志...', { today, author: defaultUser, selectedRepos });
     
-    // 直接在这里调用 API 获取日志，而不是依赖 fetchLogs 内部的状态
     setLoading(true);
     setError('');
     try {
-      const fetchedLogsRes = await api.getGitLogs({
-        repoPaths: selectedRepos,
-        startDate: today,
-        endDate: today,
-        author: defaultUser,
-        branches: {}
-      });
-      
-      const fetchedLogs = fetchedLogsRes?.logs || [];
-      setLogs(fetchedLogs);
+      let fetchedLogs = [];
+      if (selectedRepos && selectedRepos.length > 0) {
+        const fetchedLogsRes = await api.getGitLogs({
+          repoPaths: selectedRepos,
+          startDate: today,
+          endDate: today,
+          author: defaultUser,
+          branches: {}
+        });
+        fetchedLogs = fetchedLogsRes?.logs || [];
+        setLogs(fetchedLogs);
+      } else {
+        setLogs([]);
+      }
 
-      // 3. 如果有日志，根据指定的模版生成报告
-      if (fetchedLogs && fetchedLogs.length > 0) {
-        console.log(`[傻瓜模式] 成功获取 ${fetchedLogs.length} 条日志，开始调用 AI 生成...`);
+      const hasSupplement = (customOptions && customOptions.supplementPrompt) || supplementPrompt;
+
+      // 3. 如果有日志或有补充内容，调用 AI 生成
+      if (fetchedLogs.length > 0 || hasSupplement) {
+        console.log(`[傻瓜模式] 准备调用 AI 生成 (日志: ${fetchedLogs.length}条, 补充内容: ${!!hasSupplement})`);
         const foolModeOptions = customOptions || {
-          includeTomorrow: false,
+          includeTomorrow: true,
           includeReflections: false,
           includeProblems: false,
           includeDiffContent: false
         };
+        
+        // 确保包含 supplementPrompt
+        if (customOptions && customOptions.supplementPrompt !== undefined) {
+          foolModeOptions.includeTomorrow = true; // 确保开启补充内容板块
+        }
         
         const content = await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
         
@@ -300,10 +318,10 @@ function App() {
           playNotificationSound('failure');
         }
       } else {
-        console.warn('[傻瓜模式] 未获取到任何日志记录，任务结束');
+        console.warn('[傻瓜模式] 未获取到任何日志记录且无补充内容，任务结束');
         api.showNotification({
           title: '定时任务跳过',
-          body: `${today} 未发现任何 Git 提交记录，无需生成。`,
+          body: `${today} 未发现 Git 提交记录且未填写补充内容，无需生成。`,
           silent: false
         });
       }
@@ -416,6 +434,11 @@ function App() {
       setScheduleEnabled(res.SCHEDULE_ENABLED === 'true' || res.SCHEDULE_ENABLED === true);
       setScheduleTime(res.SCHEDULE_TIME || '18:00');
       
+      // 加载补充内容
+      if (res.SUPPLEMENT_PROMPT) {
+        setSupplementPrompt(res.SUPPLEMENT_PROMPT);
+      }
+      
       // 加载上次触发日期，防止重启后在同一分钟内重复触发
       if (res.LAST_TRIGGERED_DATE) {
         lastTriggeredRef.current = res.LAST_TRIGGERED_DATE;
@@ -435,6 +458,10 @@ function App() {
           fetchBranches(paths);
         }
       }
+
+      // 获取开机自启状态
+      const autoLaunch = await api.getAutoLaunch();
+      setAutoLaunchEnabled(autoLaunch);
     } catch (err) {
       console.error('获取配置信息失败', err);
     }
@@ -688,6 +715,17 @@ function App() {
       .sort((a, b) => a.date.localeCompare(b.date));
   })();
 
+  const updateAutoLaunchEnabled = async (enable) => {
+    try {
+      const success = await api.setAutoLaunch(enable);
+      if (success) {
+        setAutoLaunchEnabled(enable);
+      }
+    } catch (err) {
+      console.error('更新开机自启失败', err);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden">
       {/* 左侧固定侧边栏 - 配置区 */}
@@ -753,12 +791,12 @@ function App() {
             setReferenceLog={setReferenceLog}
             generateLog={generateLog}
             loading={loading}
-            openTomorrowPlanModal={(pos) => {
-              setTomorrowPlanModalPos(pos);
-              setTomorrowPlanModalOpen(true);
+            openSupplementModal={(pos) => {
+              setSupplementModalPos(pos);
+              setSupplementModalOpen(true);
             }}
-            tomorrowPlanPrompt={tomorrowPlanPrompt}
-            setTomorrowPlanPrompt={setTomorrowPlanPrompt}
+            supplementPrompt={supplementPrompt}
+            setSupplementPrompt={setSupplementPrompt}
             openTemplatePreview={(pos) => {
               setTemplatePreviewPos(pos);
               setTemplatePreviewOpen(true);
@@ -768,7 +806,7 @@ function App() {
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
-            <span>Version 2.1.2</span>
+            <span>Version 2.2.0</span>
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
               API Connected
@@ -995,13 +1033,13 @@ function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {tomorrowPlanModalOpen && (
-          <TomorrowPlanModal 
-            isOpen={tomorrowPlanModalOpen}
-            onClose={() => setTomorrowPlanModalOpen(false)}
-            initialValue={tomorrowPlanPrompt}
-            onSave={(val) => setTomorrowPlanPrompt(val)}
-            originPos={tomorrowPlanModalPos}
+        {supplementModalOpen && (
+          <SupplementModal 
+            isOpen={supplementModalOpen}
+            onClose={() => setSupplementModalOpen(false)}
+            initialValue={supplementPrompt}
+            onSave={(val) => setSupplementPrompt(val)}
+            originPos={supplementModalPos}
           />
         )}
       </AnimatePresence>
@@ -1048,6 +1086,8 @@ function App() {
                 initEnv={initEnv}
                 loading={loading}
               originPos={settingsModalPos}
+              autoLaunchEnabled={autoLaunchEnabled}
+              updateAutoLaunchEnabled={updateAutoLaunchEnabled}
             />
           )}
 
@@ -1056,6 +1096,7 @@ function App() {
               isOpen={foolModeOpen}
               onClose={() => setFoolModeOpen(false)}
               onGenerate={handleFoolModeGenerate}
+              onReposChange={setFoolModeRepos}
               originPos={foolModePos}
             />
           )}

@@ -1,6 +1,6 @@
 {
   "name": "git-log-generator-root",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "author": "Trae Pair Programmer",
   "description": "Git Log Generator - Root Manager",
   "repository": {
@@ -19,7 +19,7 @@
     "appId": "com.gitlog.generator",
     "productName": "Git Log Generator",
     "directories": {
-      "output": "dist_electron_2.1.2"
+      "output": "dist_electron_2.2.0"
     },
     "files": [
       "package.json",

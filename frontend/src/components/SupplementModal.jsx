@@ -2,14 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Calendar, MessageSquare, Sparkles, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const TomorrowPlanModal = ({ 
+const SupplementModal = ({ 
   isOpen, 
   onClose, 
   initialValue, 
   onSave,
   originPos = null
 }) => {
-  const [plan, setPlan] = useState(initialValue || '');
+  const [content, setContent] = useState(initialValue || '');
   
   // 计算位置感知动画偏移量
   const offset = useMemo(() => {
@@ -22,12 +22,12 @@ const TomorrowPlanModal = ({
 
   useEffect(() => {
     if (isOpen) {
-      setPlan(initialValue || '');
+      setContent(initialValue || '');
     }
   }, [isOpen, initialValue]);
 
   const handleSave = () => {
-    onSave(plan);
+    onSave(content);
     onClose();
   };
 
@@ -81,9 +81,9 @@ const TomorrowPlanModal = ({
             </div>
             <div>
               <h3 className="text-base font-black text-gray-800 uppercase tracking-widest leading-tight">
-                明日计划描述
+                补充内容描述
               </h3>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Plan Enrichment Prompt</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Content Enrichment Prompt</p>
             </div>
           </div>
           <button 
@@ -99,19 +99,19 @@ const TomorrowPlanModal = ({
           <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 flex gap-3">
             <Sparkles size={18} className="text-indigo-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-indigo-700 font-medium leading-relaxed">
-              输入几个关键词或简短描述，AI 将基于此丰富您的明日计划。例如：“继续重构模块、修复反馈的3个Bug、准备周会演示”。
+              输入几个关键词或简短描述，AI 将基于此丰富您的补充内容。例如：“自学 React Hooks 深度解析、完成一个扫雷练手 Demo、阅读《重构》第三章”。
             </p>
           </div>
 
           <div className="space-y-2">
             <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest ml-1">
-              描述您的计划
+              描述补充内容
             </label>
             <div className="relative group">
               <textarea 
-                value={plan}
-                onChange={(e) => setPlan(e.target.value)}
-                placeholder="请输入计划关键词..."
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="请输入补充内容关键词..."
                 className="w-full bg-gray-50 border border-gray-100 rounded-2xl p-4 text-sm font-medium text-gray-700 shadow-inner focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all min-h-[120px] resize-none custom-scrollbar"
               />
               <div className="absolute right-4 bottom-4 text-gray-300">
@@ -134,7 +134,7 @@ const TomorrowPlanModal = ({
             className="flex-[2] flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-black rounded-2xl transition-all active:scale-95 shadow-lg bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700"
           >
             <Save size={18} />
-            确认计划并保存
+            确认内容并保存
           </button>
         </div>
       </motion.div>
@@ -142,4 +142,4 @@ const TomorrowPlanModal = ({
   );
 };
 
-export default TomorrowPlanModal;
+export default SupplementModal;
