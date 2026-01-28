@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check, RefreshCw, Zap } from 'lucide-react';
+import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check, RefreshCw, Zap, CalendarCheck, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfigPanel = ({ 
@@ -19,6 +19,10 @@ const ConfigPanel = ({
   setEndDate, 
   fetchLogs, 
   loading,
+  checkLogs,
+  checkingLogs,
+  missingLogDates,
+  xuexitongLogUrl,
   openBranchPicker,
   openSettings,
   openFoolMode,
@@ -49,7 +53,7 @@ const ConfigPanel = ({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
-      {/* 傻瓜模式入口 - 仅在配置完成后显示 */}
+      {/* 快捷操作区：傻瓜模式与日志检查 */}
       <AnimatePresence>
         {isConfigComplete && (
           <motion.section 
@@ -58,24 +62,104 @@ const ConfigPanel = ({
             exit={{ opacity: 0, height: 0, mb: 0 }}
             className="overflow-hidden"
           >
-            <button
+            <div className="grid grid-cols-5 gap-3">
+              {/* 傻瓜模式 - 占据 3/5 宽度 */}
+              <button
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   openFoolMode({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
                 }}
-                className="w-full group relative flex items-center gap-3 p-4 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transition-all active:scale-[0.98] border border-white/10"
+                className="col-span-3 group relative flex items-center gap-3 p-4 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transition-all active:scale-[0.98] border border-white/10"
               >
                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
-                  <Zap size={40} className="text-white" />
+                  <Zap size={32} className="text-white" />
                 </div>
                 <div className="p-2 bg-white/20 rounded-xl backdrop-blur-md border border-white/30">
-                  <Zap size={18} className="text-white fill-white" />
+                  <Zap size={16} className="text-white fill-white" />
                 </div>
                 <div className="text-left">
                   <p className="text-xs font-black text-white tracking-tight">傻瓜模式</p>
                   <p className="text-[9px] text-blue-100/80 font-bold uppercase">一键生成今日简报</p>
                 </div>
               </button>
+
+              {/* 日志检查 - 占据 2/5 宽度 */}
+              <button
+                onClick={checkLogs}
+                disabled={checkingLogs || !xuexitongLogUrl}
+                className={`col-span-2 group relative flex flex-col justify-center items-center gap-1 p-3 rounded-2xl border transition-all active:scale-[0.98] shadow-sm ${
+                  checkingLogs 
+                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' 
+                    : !xuexitongLogUrl
+                      ? 'bg-amber-50 border-amber-100 text-amber-500 cursor-help'
+                      : 'bg-white border-indigo-100 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 hover:shadow-md'
+                }`}
+                title={!xuexitongLogUrl ? '请先在全局设置中配置工作日志页面 URL' : '检查本周工作日日志完成情况'}
+              >
+                {checkingLogs ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <CalendarCheck size={18} className={!xuexitongLogUrl ? 'text-amber-400' : 'text-indigo-500'} />
+                )}
+                <div className="text-center">
+                  <p className="text-[10px] font-black tracking-tight">日志检查</p>
+                  <p className={`text-[8px] font-bold uppercase ${!xuexitongLogUrl ? 'text-amber-400' : 'text-indigo-400'}`}>
+                    {checkingLogs ? '正在检查...' : !xuexitongLogUrl ? '请配置 URL' : '检查本周'}
+                  </p>
+                </div>
+                {!xuexitongLogUrl && !checkingLogs && (
+                  <div className="absolute -top-1 -right-1">
+                    <AlertCircle size={10} className="text-amber-500 fill-amber-50" />
+                  </div>
+                )}
+              </button>
+            </div>
+
+            {/* 日志检查结果展示区 */}
+            <AnimatePresence mode="wait">
+              {missingLogDates && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="mt-3"
+                >
+                  <div className={`p-3 rounded-xl border text-[10px] leading-relaxed shadow-sm ${
+                    missingLogDates.length === 0 
+                      ? 'bg-green-50 border-green-100 text-green-700' 
+                      : 'bg-amber-50 border-amber-100 text-amber-700'
+                  }`}>
+                    {missingLogDates.length === 0 ? (
+                      <div className="flex items-center gap-2">
+                        <Check size={12} className="shrink-0" />
+                        <span className="font-bold">本周工作日的日志已全部同步。</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 font-black uppercase text-[9px]">
+                          <AlertCircle size={12} className="shrink-0" />
+                          <span>缺失日志 ({missingLogDates.length} 天)</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 mt-1">
+                          {missingLogDates.map(date => {
+                            // 将 20260128 转换为 1/28 格式
+                            const month = parseInt(date.substring(4, 6));
+                            const day = parseInt(date.substring(6, 8));
+                            const displayDate = `${month}/${day}`;
+                            
+                            return (
+                              <div key={date} className="bg-white/60 px-1.5 py-1 rounded-lg border border-amber-200/50 text-center font-mono text-[9px] font-bold">
+                                {displayDate}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.section>
         )}
       </AnimatePresence>

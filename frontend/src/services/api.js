@@ -26,6 +26,7 @@ const api = {
 
   // 学习通相关
   createXuexitongNote: (data) => window.electron.invoke('api:createXuexitongNote', data),
+  checkXuexitongLogs: (data) => window.electron.invoke('api:checkXuexitongLogs', data),
 
   // 系统相关
   showNotification: (data) => window.electron.invoke('api:showNotification', data),

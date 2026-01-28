@@ -29,6 +29,9 @@ function App() {
   const [selectedBranches, setSelectedBranches] = useState({}); // 现在是 { [path]: [] }
   const [logs, setLogs] = useState([]);
   const [ignoredHashes, setIgnoredHashes] = useState(new Set());
+  const [splitIndex, setSplitIndex] = useState(null); // 分割点索引，null 表示不分割
+  const [splitDateOffset1, setSplitDateOffset1] = useState(0); // 分段1的日期偏移（相对于endDate）
+  const [splitDateOffset2, setSplitDateOffset2] = useState(1); // 分段2的日期偏移（相对于endDate）
   const [templates, setTemplates] = useState({});
   const [selectedTemplate, setSelectedTemplate] = useState('daily');
   const [generatedLog, setGeneratedLog] = useState('');
@@ -47,6 +50,7 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [defaultUser, setDefaultUser] = useState('');
   const [xuexitongUrl, setXuexitongUrl] = useState('https://note.chaoxing.com/pc/index');
+  const [xuexitongLogUrl, setXuexitongLogUrl] = useState('https://note.chaoxing.com/pc/index');
   const [xuexitongUsername, setXuexitongUsername] = useState('');
   const [xuexitongPassword, setXuexitongPassword] = useState('');
   const [browserPath, setBrowserPath] = useState('');
@@ -56,6 +60,7 @@ function App() {
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
+  const [titleTemplate, setTitleTemplate] = useState('');
   const [countdown, setCountdown] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
@@ -75,6 +80,8 @@ function App() {
   const [updateStatus, setUpdateStatus] = useState('idle'); // idle, checking, available, downloading, downloaded, error
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [updateError, setUpdateError] = useState('');
+  const [checkingLogs, setCheckingLogs] = useState(false);
+  const [missingLogDates, setMissingLogDates] = useState(null);
 
   useEffect(() => {
     fetchTemplates();
@@ -147,42 +154,63 @@ function App() {
   /**
    * 同步笔记到学习通
    */
-  const handleSyncToXuexitong = React.useCallback(async (content, isFoolMode = false, targetDate = null, headless = false) => {
-    console.log(`[Frontend] handleSyncToXuexitong 被调用, headless: ${headless}, isFoolMode: ${isFoolMode}`);
+  const handleSyncToXuexitong = React.useCallback(async (content, isFoolMode = false, targetDate = null, headless = false, silentNotify = false) => {
+    console.log(`[Frontend] handleSyncToXuexitong 被调用, headless: ${headless}, isFoolMode: ${isFoolMode}, silentNotify: ${silentNotify}`);
     const syncDate = targetDate || endDate;
+    
+    // 生成同步标题
+    let syncTitle = `工作日志 ${syncDate}`;
+    if (titleTemplate) {
+      const formattedDate = dayjs(syncDate).format('YYYYMMDD');
+      const formattedDateHyphen = dayjs(syncDate).format('YYYY-MM-DD');
+      const formattedDateCN = dayjs(syncDate).format('YYYY年M月D日');
+      
+      syncTitle = titleTemplate
+        .replace(/{date}/g, formattedDate)
+        .replace(/{author}/g, selectedAuthor || defaultUser || 'Unknown')
+        .replace(/{repo}/g, repoPaths.length > 0 ? (repoPaths[0].split(/[/\\]/).pop() || 'MultiRepos') : 'MultiRepos');
+      
+      syncTitle = syncTitle.replace(/\d{4}-\d{2}-\d{2}/g, formattedDateHyphen);
+      syncTitle = syncTitle.replace(/\d{4}年\d{1,2}月\d{1,2}日/g, formattedDateCN);
+      syncTitle = syncTitle.replace(/20260102/g, formattedDate);
+    }
+
     try {
       const res = await api.createXuexitongNote({
         content,
-        title: `工作日志 ${syncDate}`,
-        headless
+        title: syncTitle,
+        headless,
+        silentNotify
       });
       if (res.success) {
-        // 播放成功音效
-        playNotificationSound('success');
-        
-        api.showNotification({
-          title: '同步成功',
-          body: isFoolMode 
-            ? `${syncDate} 的工作日志已成功同步到学习通`
-            : '同步成功！笔记已保存到学习通。',
-          silent: true // 已经手动播放了音效，所以通知设为静音
-        });
+        if (!silentNotify) {
+          playNotificationSound('success');
+          api.showNotification({
+            title: '同步成功',
+            body: isFoolMode 
+              ? `${syncDate} 的工作日志已成功同步到学习通`
+              : '同步成功！笔记已保存到学习通。',
+            silent: true
+          });
+        }
+        return { success: true, date: syncDate };
       }
     } catch (err) {
-      // 播放失败音效
-      playNotificationSound('failure');
-      
-      const errorMsg = err.message || '同步失败，请检查学习通配置';
-      api.showNotification({ 
-        title: '同步失败', 
-        body: isFoolMode 
-          ? `${syncDate} 的工作日志同步失败: ${errorMsg}` 
-          : errorMsg,
-        silent: true
-      });
+      if (!silentNotify) {
+        playNotificationSound('failure');
+        const errorMsg = err.message || '同步失败，请检查学习通配置';
+        api.showNotification({ 
+          title: '同步失败', 
+          body: isFoolMode 
+            ? `${syncDate} 的工作日志同步失败: ${errorMsg}` 
+            : errorMsg,
+          silent: true
+        });
+      }
       console.error('Sync Error:', err);
+      return { success: false, date: syncDate, error: err.message };
     }
-  }, [endDate, playNotificationSound]);
+  }, [endDate, playNotificationSound, titleTemplate, selectedAuthor, defaultUser, repoPaths]);
 
   const generateLog = React.useCallback(async (customLogs = null, customTemplate = null, customRepoPaths = null, customOptions = null) => {
     // 检查参数是否为 React 事件对象
@@ -193,10 +221,12 @@ function App() {
     setError('');
     try {
       const targetLogs = actualLogs || logs.filter(log => !ignoredHashes.has(log.hash));
-      const hasSupplement = (customOptions && customOptions.supplementPrompt) || supplementPrompt;
+      const currentOptions = customOptions || templateOptions;
+      const isSupplementEnabled = currentOptions.includeTomorrow;
+      const hasSupplement = isSupplementEnabled && ((customOptions && customOptions.supplementPrompt) || supplementPrompt);
       
       if (targetLogs.length === 0 && !hasSupplement) {
-        setError('没有可供生成的有效提交记录，且未填写补充内容');
+        setError(isSupplementEnabled ? '没有可供生成的有效提交记录，且未填写补充内容' : '没有可供生成的有效提交记录，请开启“补充内容”并填写，或检查 Git 提交');
         setLoading(false);
         return;
       }
@@ -204,6 +234,7 @@ function App() {
       console.log('开始请求 AI 生成，参数:', {
         logsCount: targetLogs.length,
         template: customTemplate || selectedTemplate,
+        includeTomorrow: isSupplementEnabled,
         apiKeyPresent: !!apiKey
       });
 
@@ -212,9 +243,9 @@ function App() {
         repoPaths: customRepoPaths || repoPaths,
         templateKey: customTemplate || selectedTemplate,
         customPrompt: customPrompt,
-        tomorrowPlanPrompt: (customOptions && customOptions.supplementPrompt !== undefined) ? customOptions.supplementPrompt : supplementPrompt,
+        tomorrowPlanPrompt: isSupplementEnabled ? ((customOptions && customOptions.supplementPrompt !== undefined) ? customOptions.supplementPrompt : supplementPrompt) : '',
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
-        options: customOptions || templateOptions,
+        options: currentOptions,
         apiKey: apiKey // 确保传递 API Key
       });
       
@@ -237,6 +268,109 @@ function App() {
       setLoading(false);
     }
   }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, supplementPrompt, referenceLog, templateOptions, apiKey]);
+
+  /**
+   * 分段生成并同步多日日志
+   */
+  const handleSplitGenerateAndSync = React.useCallback(async () => {
+    if (splitIndex === null || logs.length === 0) return;
+
+    setLoading(true);
+    setError('');
+    
+    const results = [];
+    try {
+      // 1. 划分日志
+      const part1Logs = []; // 上半部分（较新的日志，默认今日）
+      const part2Logs = []; // 下半部分（较旧的日志，默认昨日）
+      
+      logs.forEach((log, idx) => {
+        if (ignoredHashes.has(log.hash)) return;
+        if (idx < splitIndex) {
+          part1Logs.push(log);
+        } else {
+          part2Logs.push(log);
+        }
+      });
+
+      // 2. 确定日期：使用自定义偏移量
+      const date1 = dayjs(endDate).subtract(splitDateOffset1, 'day').format('YYYY-MM-DD');
+      const date2 = dayjs(endDate).subtract(splitDateOffset2, 'day').format('YYYY-MM-DD');
+
+      console.log(`[分段同步] 开始处理。日期1(${date1}): ${part1Logs.length}条, 日期2(${date2}): ${part2Logs.length}条`);
+
+      // 3. 并行生成 AI 日志内容
+      console.log('[分段同步] 正在并行生成 AI 日志内容...');
+      const generationPromises = [];
+
+      // 准备 Part 2 (较旧)
+      if (part2Logs.length > 0) {
+        const part2Options = { ...templateOptions, includeTomorrow: false };
+        generationPromises.push(
+          generateLog(part2Logs, selectedTemplate, repoPaths, part2Options)
+            .then(content => ({ id: 'part2', content, date: date2 }))
+        );
+      }
+
+      // 准备 Part 1 (较新)
+      if (part1Logs.length > 0) {
+        generationPromises.push(
+          generateLog(part1Logs, selectedTemplate, repoPaths, templateOptions)
+            .then(content => ({ id: 'part1', content, date: date1 }))
+        );
+      }
+
+      const generatedContents = await Promise.all(generationPromises);
+      console.log(`[分段同步] AI 内容生成完毕 (共 ${generatedContents.length} 份)`);
+
+      // 4. 串行同步到学习通 (保持串行以避免并发冲突)
+      for (const item of generatedContents) {
+        if (item.content) {
+          console.log(`[分段同步] 正在同步日期 ${item.date}...`);
+          const result = await handleSyncToXuexitong(item.content, true, item.date, false, true); // 静默同步
+          
+          if (!result?.success) {
+            results.push({ date: item.date, success: false, error: result?.error });
+          } else {
+            results.push({ date: item.date, success: true });
+          }
+          
+          // 给同步操作留出间隔，避免过于频繁导致失败
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          console.warn(`[分段同步] 日期 ${item.date} 内容为空，跳过同步`);
+          results.push({ date: item.date, success: false, error: 'AI 生成内容为空' });
+        }
+      }
+
+      // 5. 统一通知结果
+      const failed = results.filter(r => !r.success);
+      if (failed.length > 0) {
+        const failedDates = failed.map(f => f.date).join(', ');
+        api.showNotification({
+          title: '分段同步部分失败',
+          body: `以下日期的日志同步失败: ${failedDates}。请检查网络或配置。`,
+          silent: false
+        });
+        playNotificationSound('failure');
+      } else {
+        api.showNotification({
+          title: '分段同步完成',
+          body: '多日工作日志已分别生成并同步成功。',
+          silent: false
+        });
+        playNotificationSound('success');
+      }
+      
+      setSplitIndex(null); 
+    } catch (err) {
+      console.error('[分段同步] 出错:', err);
+      setError(`分段同步失败: ${err.message}`);
+      playNotificationSound('failure');
+    } finally {
+      setLoading(false);
+    }
+  }, [splitIndex, logs, ignoredHashes, endDate, splitDateOffset1, splitDateOffset2, templateOptions, selectedTemplate, repoPaths, generateLog, handleSyncToXuexitong, playNotificationSound]);
 
   /**
    * 傻瓜模式一键生成逻辑
@@ -287,22 +421,19 @@ function App() {
         setLogs([]);
       }
 
-      const hasSupplement = (customOptions && customOptions.supplementPrompt) || supplementPrompt;
+      const foolModeOptions = customOptions || {
+        includeTomorrow: true,
+        includeReflections: false,
+        includeProblems: false,
+        includeDiffContent: false
+      };
+
+      const isSupplementEnabled = foolModeOptions.includeTomorrow;
+      const hasSupplement = isSupplementEnabled && ((customOptions && customOptions.supplementPrompt) || supplementPrompt);
 
       // 3. 如果有日志或有补充内容，调用 AI 生成
       if (fetchedLogs.length > 0 || hasSupplement) {
-        console.log(`[傻瓜模式] 准备调用 AI 生成 (日志: ${fetchedLogs.length}条, 补充内容: ${!!hasSupplement})`);
-        const foolModeOptions = customOptions || {
-          includeTomorrow: true,
-          includeReflections: false,
-          includeProblems: false,
-          includeDiffContent: false
-        };
-        
-        // 确保包含 supplementPrompt
-        if (customOptions && customOptions.supplementPrompt !== undefined) {
-          foolModeOptions.includeTomorrow = true; // 确保开启补充内容板块
-        }
+        console.log(`[傻瓜模式] 准备调用 AI 生成 (日志: ${fetchedLogs.length}条, 补充内容开启: ${isSupplementEnabled})`);
         
         const content = await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
         
@@ -413,6 +544,46 @@ function App() {
   }, [scheduleEnabled, scheduleTime, foolModeRepos, handleFoolModeGenerate, playNotificationSound]);
 
   // API 调用逻辑
+  const handleCheckLogs = async () => {
+    if (checkingLogs) return;
+    
+    setCheckingLogs(true);
+    setMissingLogDates(null);
+    
+    try {
+      // 使用无头模式在后台检查
+      const res = await api.checkXuexitongLogs({ headless: true });
+      if (res.success) {
+        setMissingLogDates(res.missingDates);
+        if (res.missingDates.length === 0) {
+          api.showNotification({
+            title: '日志检查完成',
+            body: '本周的工作日日志均已同步，太棒了！',
+            silent: false
+          });
+          playNotificationSound('success');
+        } else {
+          api.showNotification({
+            title: '发现缺失日志',
+            body: `本周工作日中，有 ${res.missingDates.length} 天未发现日志：${res.missingDates.join(', ')}`,
+            silent: false
+          });
+          playNotificationSound('failure');
+        }
+      }
+    } catch (err) {
+      console.error('检查日志失败:', err);
+      api.showNotification({
+        title: '检查失败',
+        body: err.message || '无法连接学习通或检查过程中出错',
+        silent: false
+      });
+      playNotificationSound('failure');
+    } finally {
+      setCheckingLogs(false);
+    }
+  };
+
   const fetchConfig = async () => {
     try {
       const res = await api.getConfig();
@@ -421,6 +592,7 @@ function App() {
       setApiKey(res.DEEPSEEK_API_KEY || '');
       setDefaultUser(res.DEFAULT_USER || '');
       setXuexitongUrl(res.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
+      setXuexitongLogUrl(res.XUEXITONG_LOG_CHECK_URL || res.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
       setXuexitongUsername(res.XUEXITONG_USERNAME || '');
       setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
       setBrowserPath(res.BROWSER_PATH || '');
@@ -434,6 +606,7 @@ function App() {
       
       setScheduleEnabled(res.SCHEDULE_ENABLED === 'true' || res.SCHEDULE_ENABLED === true);
       setScheduleTime(res.SCHEDULE_TIME || '18:00');
+      setTitleTemplate(res.TITLE_TEMPLATE || '');
       
       // 加载补充内容
       if (res.SUPPLEMENT_PROMPT) {
@@ -503,6 +676,7 @@ function App() {
       if (key === 'DEEPSEEK_API_KEY') setApiKey(value);
       if (key === 'DEFAULT_USER') setDefaultUser(value);
       if (key === 'XUEXITONG_NOTE_URL') setXuexitongUrl(value);
+      if (key === 'XUEXITONG_LOG_CHECK_URL') setXuexitongLogUrl(value);
       if (key === 'XUEXITONG_USERNAME') setXuexitongUsername(value);
       if (key === 'XUEXITONG_PASSWORD') setXuexitongPassword(value);
       if (key === 'BROWSER_PATH') setBrowserPath(value);
@@ -511,6 +685,7 @@ function App() {
       if (key === 'FAILURE_SOUND') setFailureSound(value);
       if (key === 'SCHEDULE_ENABLED') setScheduleEnabled(value === 'true' || value === true);
       if (key === 'SCHEDULE_TIME') setScheduleTime(value);
+      if (key === 'TITLE_TEMPLATE') setTitleTemplate(value);
     } catch (err) {
       console.error(`更新配置 ${key} 失败`, err);
     }
@@ -759,6 +934,9 @@ function App() {
             setEndDate={setEndDate}
             fetchLogs={fetchLogs}
             loading={loading}
+            checkLogs={handleCheckLogs}
+            checkingLogs={checkingLogs}
+            missingLogDates={missingLogDates}
             openBranchPicker={(pos) => {
               setBranchPickerOpen(true);
               setBranchPickerPos(pos);
@@ -777,6 +955,8 @@ function App() {
             notificationSoundEnabled={notificationSoundEnabled}
             successSound={successSound}
             failureSound={failureSound}
+            xuexitongLogUrl={xuexitongLogUrl}
+            updateXuexitongLogUrl={(val) => updateConfig('XUEXITONG_LOG_CHECK_URL', val)}
           />
 
           <LogGenerator 
@@ -789,9 +969,9 @@ function App() {
             customPrompt={customPrompt}
             setCustomPrompt={setCustomPrompt}
             referenceLog={referenceLog}
-            setReferenceLog={setReferenceLog}
-            generateLog={generateLog}
-            loading={loading}
+                  setReferenceLog={setReferenceLog}
+                  generateLog={splitIndex !== null ? handleSplitGenerateAndSync : generateLog}
+                  loading={loading}
             openSupplementModal={(pos) => {
               setSupplementModalPos(pos);
               setSupplementModalOpen(true);
@@ -802,15 +982,16 @@ function App() {
               setTemplatePreviewPos(pos);
               setTemplatePreviewOpen(true);
             }}
+            splitIndex={splitIndex}
           />
         </div>
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-              <span>Version 2.2.1</span>
-              <button 
-                onClick={() => window.electron.send('check-for-update')}
+                  <span>Version 2.3.0</span>
+                  <button 
+                    onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
                 title="检查更新"
               >
@@ -896,12 +1077,19 @@ function App() {
             {activeTab === 'viz' && logs.length > 0 && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <CommitVisualizer 
-                  logs={logs}
-                  chartData={chartData}
-                  ignoredHashes={ignoredHashes}
-                  toggleIgnore={toggleIgnore}
-                  ignoreMerges={ignoreMerges}
-                />
+                    logs={logs} 
+                    chartData={chartData}
+                    ignoredHashes={ignoredHashes}
+                    toggleIgnore={toggleIgnore}
+                    ignoreMerges={ignoreMerges}
+                    splitIndex={splitIndex}
+                    setSplitIndex={setSplitIndex}
+                    endDate={endDate}
+                    splitDateOffset1={splitDateOffset1}
+                    setSplitDateOffset1={setSplitDateOffset1}
+                    splitDateOffset2={splitDateOffset2}
+                    setSplitDateOffset2={setSplitDateOffset2}
+                  />
               </div>
             )}
 
@@ -1119,11 +1307,15 @@ function App() {
                 updateScheduleEnabled={(val) => updateConfig('SCHEDULE_ENABLED', val)}
                 scheduleTime={scheduleTime}
                 updateScheduleTime={(val) => updateConfig('SCHEDULE_TIME', val)}
+                titleTemplate={titleTemplate}
+                updateTitleTemplate={(val) => updateConfig('TITLE_TEMPLATE', val)}
                 initEnv={initEnv}
                 loading={loading}
               originPos={settingsModalPos}
               autoLaunchEnabled={autoLaunchEnabled}
               updateAutoLaunchEnabled={updateAutoLaunchEnabled}
+              xuexitongLogUrl={xuexitongLogUrl}
+              updateXuexitongLogUrl={(val) => updateConfig('XUEXITONG_LOG_CHECK_URL', val)}
             />
           )}
 

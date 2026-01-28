@@ -18,7 +18,8 @@ const LogGenerator = ({
   openSupplementModal,
   supplementPrompt,
   setSupplementPrompt,
-  openTemplatePreview
+  openTemplatePreview,
+  splitIndex
 }) => {
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const templateDropdownRef = useRef(null);
@@ -219,10 +220,14 @@ const LogGenerator = ({
         <button 
           onClick={generateLog}
           disabled={loading}
-          className="w-full bg-green-600 text-white py-3 rounded-xl hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-sm font-bold shadow-lg shadow-green-500/20 active:scale-[0.98]"
+          className={`w-full py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm font-bold shadow-lg active:scale-[0.98] ${
+            splitIndex !== null 
+              ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20 text-white' 
+              : 'bg-green-600 hover:bg-green-700 shadow-green-500/20 text-white'
+          } disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed`}
         >
-          {loading ? <Loader2 className="animate-spin" size={18} /> : <FileText size={18} />}
-          AI 生成日志
+          {loading ? <Loader2 className="animate-spin" size={18} /> : (splitIndex !== null ? <Sparkles size={18} /> : <FileText size={18} />)}
+          {splitIndex !== null ? '分段生成' : 'AI 生成日志'}
         </button>
       </div>
     </div>

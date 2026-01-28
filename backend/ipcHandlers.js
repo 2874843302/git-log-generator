@@ -12,6 +12,7 @@ marked.setOptions({
 });
 const gitService = require('./server/services/gitService');
 const aiService = require('./server/services/aiService');
+const scheduler = require('./scheduler');
 const { templates } = require('./server/constants/templates');
 const { getSetting, setSetting, getAllSettings } = require('./database');
 
@@ -54,6 +55,15 @@ Object.entries(allSettings).forEach(([key, value]) => {
   process.env[key] = value;
 });
 
+// 应用启动时，确保 Windows 任务计划与配置同步
+const initialScheduleEnabled = allSettings.SCHEDULE_ENABLED === 'true' || allSettings.SCHEDULE_ENABLED === true;
+const initialScheduleTime = allSettings.SCHEDULE_TIME;
+if (initialScheduleEnabled && initialScheduleTime) {
+  scheduler.syncTask(true, initialScheduleTime).catch(err => {
+    console.error('[Init] 同步 Windows 任务计划失败:', err);
+  });
+}
+
 // Playwright 浏览器实例单例，避免重复启动
 let browserInstance = null; // 记录浏览器实例
 let browserContext = null;  // 记录浏览器上下文
@@ -75,6 +85,208 @@ async function closeBrowser() {
 }
 
 function registerIpcHandlers() {
+  // 学习通日志检查 (放在最前面确保优先注册)
+  ipcMain.handle('api:checkXuexitongLogs', async (event, { headless = true }) => {
+    console.log(`[Backend] checkXuexitongLogs called. headless: ${headless}`);
+    
+    // 优先从环境变量获取，如果没有则使用默认 URL
+    const targetUrl = process.env.XUEXITONG_LOG_CHECK_URL || process.env.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index';
+    const username = process.env.XUEXITONG_USERNAME;
+    const password = process.env.XUEXITONG_PASSWORD;
+    const customBrowserPath = process.env.BROWSER_PATH;
+
+    if (!username || !password) {
+      throw new Error('未配置学习通账号密码，请在设置中配置后再试');
+    }
+
+    // 1. 计算本周的工作日
+    const getWorkdays = () => {
+      const workdays = [];
+      let current = new Date();
+      current.setHours(0, 0, 0, 0);
+      
+      const dayOfWeek = current.getDay(); // 0 (Sun) to 6 (Sat)
+      
+      // 计算本周一的日期
+      // 如果今天是周日(0)，则周一是 6 天前
+      // 如果今天是周一(1)，则周一是今天
+      // 如果今天是周二(2)，则周一是 1 天前
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      
+      const monday = new Date(current);
+      monday.setDate(current.getDate() - daysSinceMonday);
+      
+      // 从周一循环到今天
+      let temp = new Date(monday);
+      while (temp <= current) {
+        const d = temp.getDay();
+        if (d !== 0 && d !== 6) { // 排除周六周日
+          workdays.push(new Date(temp));
+        }
+        temp.setDate(temp.getDate() + 1);
+      }
+      return workdays;
+    };
+
+    const targetDates = getWorkdays();
+    const targetDateStrings = targetDates.map(d => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}${m}${day}`;
+    });
+
+    try {
+      // 2. 启动浏览器
+      console.log(`[Backend] Target URL: ${targetUrl}`);
+      console.log(`[Backend] Target dates to check: ${targetDateStrings.join(', ')}`);
+
+      if (!browserContext) {
+        console.log('[Backend] Launching new browser instance...');
+        const launchOptions = {
+          headless: headless,
+          executablePath: customBrowserPath || undefined,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        };
+
+        try {
+          if (customBrowserPath) {
+            console.log(`[Backend] Using custom browser path: ${customBrowserPath}`);
+            browserInstance = await chromium.launch(launchOptions);
+            browserContext = await browserInstance.newContext({
+              viewport: { width: 1280, height: 800 }
+            });
+          } else {
+            const userDataDir = path.join(process.cwd(), 'playwright-data');
+            console.log(`[Backend] Using persistent context at: ${userDataDir}`);
+            if (!fs.existsSync(userDataDir)) {
+              fs.mkdirSync(userDataDir, { recursive: true });
+            }
+            browserContext = await chromium.launchPersistentContext(userDataDir, launchOptions);
+            browserInstance = browserContext.browser();
+          }
+        } catch (launchError) {
+          console.error('[Backend] Failed to launch browser:', launchError);
+          throw new Error(`无法启动浏览器: ${launchError.message}`);
+        }
+      }
+
+      const page = await browserContext.newPage();
+      console.log('[Backend] New page created.');
+      
+      // 3. 访问并处理登录
+      console.log(`[Backend] Navigating to ${targetUrl}...`);
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      console.log(`[Backend] Current URL after navigation: ${page.url()}`);
+      
+      // 检查是否在登录页
+      const isLoginPage = page.url().includes('login') || await page.$('input#phone');
+      if (isLoginPage) {
+        console.log('[Backend] Detected login page, performing login for user:', username);
+        await page.fill('input#phone', username);
+        await page.fill('input#pwd', password);
+        await page.click('button#loginBtn');
+        console.log('[Backend] Login button clicked, waiting for navigation...');
+        // 等待登录成功并跳转回主页或笔记页
+        await page.waitForURL(url => url.href.includes('chaoxing.com') && !url.href.includes('login'), { timeout: 60000 });
+        await page.waitForLoadState('networkidle');
+        console.log(`[Backend] Navigation complete. New URL: ${page.url()}`);
+      } else {
+        console.log('[Backend] Not on login page, proceeding...');
+      }
+
+      // 4. 确保在笔记列表页，且不在“写笔记”页面
+      const isNotePage = () => {
+        const url = page.url();
+        const isBaseNoteDomain = url.includes('note.chaoxing.com') || url.includes('noteyd.chaoxing.com');
+        const isCreatePage = url.includes('jumpToAddNote') || url.includes('isCreate=true');
+        return isBaseNoteDomain && !isCreatePage;
+      };
+      
+      if (!isNotePage() || page.url().includes('login')) {
+        console.log(`[Backend] Not on note list page (Current: ${page.url()}), forcing navigation to targetUrl...`);
+        // 强制跳转到列表页，并确保 URL 不带创建参数
+        await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
+      } else {
+        console.log('[Backend] Already on note list page.');
+      }
+
+      // 5. 等待列表加载并抓取标题
+      console.log('[Backend] Waiting for note list content (#activitysMe or .itemList)...');
+      
+      // 根据用户提供的结构，层级为 .notebookPage > .subPageMain > .centerMain > .dataCon > .itemList
+      const listSelector = '.notebookPage .subPageMain .centerMain .dataCon .itemList, #activitysMe, .itemList';
+      try {
+        await page.waitForSelector(listSelector, { timeout: 30000, state: 'attached' });
+        console.log('[Backend] List content selector detected.');
+      } catch (timeoutErr) {
+        console.error('[Backend] Timeout waiting for list content. Current URL:', page.url());
+        const content = await page.content();
+        console.log('[Backend] Page content preview (first 500 chars):', content.substring(0, 500));
+        throw new Error('未能加载笔记列表，请检查网络或是否已正确登录。当前页面：' + page.url());
+      }
+      
+      // 额外等待一下确保异步加载完成
+      console.log('[Backend] Giving page extra time to stabilize...');
+      await page.waitForTimeout(3000);
+      
+      // 滚动一下确保加载更多内容
+      console.log('[Backend] Scrolling to ensure list items are rendered...');
+      await page.evaluate(() => {
+        const list = document.querySelector('.itemList') || document.querySelector('#activitysMe') || document.body;
+        list.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      });
+      await page.waitForTimeout(2000);
+
+      // 获取所有可能的标题文本
+      console.log('[Backend] Extracting note titles...');
+      const titles = await page.$$eval('.li_title_text', (elements) => 
+        elements.map(el => {
+          // 用户提供的结构中，标题文本在 span > a 内部
+          // <span class="li_title_text"><a style="color: #0099ff;">20260126</a></span>
+          const link = el.querySelector('a');
+          const text = (link ? link.textContent : el.textContent).trim();
+          return text;
+        }).filter(t => t.length > 0)
+      );
+      
+      console.log(`[Backend] Found ${titles.length} titles in current view.`);
+      if (titles.length > 0) {
+        console.log('[Backend] Sample titles:', titles.slice(0, 3).join(' | '));
+      }
+      
+      await page.close();
+      console.log('[Backend] Page closed.');
+
+      // 6. 比对结果
+      console.log('[Backend] Comparing found titles with target dates...');
+      const missingDates = targetDateStrings.filter(target => {
+        const year = target.substring(0, 4);
+        const month = target.substring(4, 6);
+        const day = target.substring(6, 8);
+        
+        // 更加宽松的匹配逻辑
+        const regex = new RegExp(`${year}.*?${month}.*?${day}`);
+        return !titles.some(title => regex.test(title) || title.includes(target));
+      });
+
+      return { 
+        success: true, 
+        missingDates, 
+        foundTitlesCount: titles.length,
+        checkedCount: targetDateStrings.length 
+      };
+
+    } catch (error) {
+      console.error('检查学习通日志失败:', error);
+      throw new Error('检查失败: ' + error.message);
+    } finally {
+      if (headless) {
+        await closeBrowser();
+      }
+    }
+  });
+
   // Folder & Config 相关
   ipcMain.handle('api:getDrives', async () => {
     if (process.platform === 'win32') {
@@ -126,6 +338,16 @@ function registerIpcHandlers() {
         setSetting(key, value);
         process.env[key] = value;
       });
+
+      // 如果更新了定时任务相关的配置，同步到 Windows 任务计划程序
+      if (newConfig.SCHEDULE_ENABLED !== undefined || newConfig.SCHEDULE_TIME !== undefined) {
+        const enabled = getSetting('SCHEDULE_ENABLED') === 'true' || getSetting('SCHEDULE_ENABLED') === true;
+        const time = getSetting('SCHEDULE_TIME');
+        scheduler.syncTask(enabled, time).catch(err => {
+          console.error('[IPC] 同步 Windows 任务计划失败:', err);
+        });
+      }
+
       return { success: true };
     } catch (error) {
       throw new Error('更新配置失败: ' + error.message);
@@ -156,7 +378,8 @@ function registerIpcHandlers() {
       SUCCESS_SOUND: 'yeah.mp3',
       FAILURE_SOUND: '啊咧？.mp3',
       SCHEDULE_ENABLED: 'false',
-      SCHEDULE_TIME: '18:00'
+      SCHEDULE_TIME: '18:00',
+      TITLE_TEMPLATE: ''
     };
 
     try {
@@ -294,13 +517,13 @@ function registerIpcHandlers() {
     // 2. 调用 AI 生成
     return await aiService.generateAILog({
       ...data,
-      logs: enrichedLogs
+      logs: enrichedLogs,
+      titleTemplate: getSetting('TITLE_TEMPLATE') || ''
     });
   });
 
-  // 学习通同步相关
-  ipcMain.handle('api:createXuexitongNote', async (event, { content, title, headless = false }) => {
-    console.log(`[Backend] createXuexitongNote called. headless: ${headless}, lastUsedHeadless: ${lastUsedHeadless}`);
+  ipcMain.handle('api:createXuexitongNote', async (event, { content, title, headless = false, silentNotify = false }) => {
+    console.log(`[Backend] createXuexitongNote called. headless: ${headless}, silentNotify: ${silentNotify}`);
 
     // 获取通知图标的可靠路径
      const getNotifyIcon = () => {
@@ -458,41 +681,101 @@ function registerIpcHandlers() {
         notePage = page;
       }
 
-      // 6. 填充标题和内容 - 优化：直接通过 JS 注入，不再模拟打字
+      // 6. 填充标题和内容 - 优化：直接通过 JS 注入，并增加备选方案
       console.log('正在注入笔记内容...');
       await notePage.waitForLoadState('domcontentloaded');
       
-      await Promise.all([
-        // 填充标题
-        notePage.waitForSelector('#noteTitle', { timeout: 5000 }).then(el => 
-          el.evaluate((node, val) => {
-            node.value = val;
-            node.dispatchEvent(new Event('input', { bubbles: true }));
-          }, title)
-        ).catch(e => console.warn('标题填充跳过:', e.message)),
+      // 等待编辑器主体加载，作为页面就绪的信号
+      try {
+        await notePage.waitForSelector('div[contenteditable="true"].ProseMirror', { timeout: 10000 });
+      } catch (e) {
+        console.warn('等待编辑器主体超时，尝试继续填充...');
+      }
 
-        // 填充内容
-        notePage.waitForSelector('div[contenteditable="true"].ProseMirror', { timeout: 5000 }).then(el =>
-          el.evaluate((node, val) => {
+      // 填充标题的增强逻辑
+      const fillTitle = async () => {
+        const titleSelectors = ['#noteTitle', 'input[placeholder*="标题"]', '.note-title-input'];
+        for (const selector of titleSelectors) {
+          try {
+            const el = await notePage.waitForSelector(selector, { timeout: 5000 });
+            if (el) {
+              await el.focus();
+              await el.click(); // 显式点击以确保触发框架的 focus 事件
+              
+              // 使用 fill 后再手动触发一系列事件，确保框架感知到状态变化
+              await el.fill(title);
+              
+              await el.evaluate(node => {
+                // 触发 input 事件 (Vue/React 常用)
+                node.dispatchEvent(new Event('input', { bubbles: true }));
+                // 触发 change 事件
+                node.dispatchEvent(new Event('change', { bubbles: true }));
+                // 触发 blur 事件，很多框架在失去焦点时同步状态
+                node.dispatchEvent(new Event('blur', { bubbles: true }));
+              });
+              
+              console.log(`标题填充成功并触发事件 (使用选择器: ${selector})`);
+              return true;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        // 如果选择器都失败，尝试使用键盘
+        try {
+          console.warn('选择器填充标题失败，尝试模拟按键...');
+          await notePage.focus('body'); 
+          await notePage.keyboard.press('Tab'); 
+          await notePage.keyboard.type(title, { delay: 10 });
+          return true;
+        } catch (e) {
+          console.error('所有标题填充方案均失败:', e.message);
+          return false;
+        }
+      };
+
+      await fillTitle();
+      
+      // 填充内容
+      try {
+        const contentEl = await notePage.waitForSelector('div[contenteditable="true"].ProseMirror', { timeout: 5000 });
+        if (contentEl) {
+          await contentEl.evaluate((node, val) => {
             node.innerHTML = val;
             node.dispatchEvent(new Event('input', { bubbles: true }));
-          }, marked.parse(content))
-        ).catch(async () => {
-          // 备选方案：如果找不到编辑器，尝试 Tab 键快速填充
-          await notePage.keyboard.press('Tab');
-          await notePage.keyboard.type(content, { delay: 0 });
-        })
-      ]);
+          }, marked.parse(content));
+          console.log('内容注入成功');
+        }
+      } catch (e) {
+        console.warn('编辑器内容注入失败，尝试模拟按键填充...');
+        await notePage.keyboard.press('Tab');
+        await notePage.keyboard.type(content, { delay: 0 });
+      }
+
+      // 在点击保存前稍微等待，确保框架已经处理完上面的事件
+      await notePage.waitForTimeout(1000);
 
       // 7. 快速保存
-      await notePage.click('#y-finish', { delay: 0 });
+      await notePage.click('#y-finish', { delay: 100 });
       console.log('同步指令已发出');
 
-      new Notification({
-        title: 'Git Log AI',
-        body: `同步成功：${title}`,
-        icon: getNotifyIcon()
-      }).show();
+      // 等待保存完成或页面跳转，然后再结束（有助于连续同步时的稳定性）
+      await notePage.waitForTimeout(1500);
+      
+      // 如果不是同一个页面，关闭新开的笔记页
+      if (notePage !== page) {
+        await notePage.close().catch(() => {});
+      }
+      // 关闭列表页
+      await page.close().catch(() => {});
+
+      if (!silentNotify) {
+        new Notification({
+          title: 'Git Log AI',
+          body: `同步成功：${title}`,
+          icon: getNotifyIcon()
+        }).show();
+      }
 
       return { success: true };
     } catch (error) {

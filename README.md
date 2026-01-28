@@ -69,8 +69,8 @@ npm run dev
   项目已配置 GitHub Actions 自动化工作流。当你向仓库推送以 `v` 开头的标签（例如 `v2.2.1`）时，系统会自动执行打包并创建一个新的 GitHub Release，同时上传安装包和更新说明文件（`latest.yml`）。
 
   ```bash
-  git tag v2.2.1
-  git push origin v2.2.1
+  git tag v2.3.0
+  git push origin v2.3.0
   ```
 
 ## ⚙️ 配置说明

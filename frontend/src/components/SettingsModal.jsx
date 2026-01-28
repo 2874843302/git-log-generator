@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar } from 'lucide-react';
+import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar, Type } from 'lucide-react';
 
 const SettingsModal = ({ 
   isOpen, 
@@ -14,6 +14,8 @@ const SettingsModal = ({
   updateDefaultUser,
   xuexitongUrl,
   updateXuexitongUrl,
+  xuexitongLogUrl,
+  updateXuexitongLogUrl,
   xuexitongUsername,
   updateXuexitongUsername,
   xuexitongPassword,
@@ -30,6 +32,8 @@ const SettingsModal = ({
   updateScheduleEnabled,
   scheduleTime,
   updateScheduleTime,
+  titleTemplate,
+  updateTitleTemplate,
   initEnv,
   loading,
   originPos,
@@ -39,10 +43,12 @@ const SettingsModal = ({
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localDefaultUser, setLocalDefaultUser] = useState(defaultUser);
   const [localXuexitongUrl, setLocalXuexitongUrl] = useState(xuexitongUrl);
+  const [localXuexitongLogUrl, setLocalXuexitongLogUrl] = useState(xuexitongLogUrl);
   const [localXuexitongUsername, setLocalXuexitongUsername] = useState(xuexitongUsername);
   const [localXuexitongPassword, setLocalXuexitongPassword] = useState(xuexitongPassword);
   const [localBrowserPath, setLocalBrowserPath] = useState(browserPath);
   const [localScheduleTime, setLocalScheduleTime] = useState(scheduleTime);
+  const [localTitleTemplate, setLocalTitleTemplate] = useState(titleTemplate);
   const [detectedBrowsers, setDetectedBrowsers] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -85,6 +91,10 @@ const SettingsModal = ({
   }, [xuexitongUrl]);
 
   useEffect(() => {
+    setLocalXuexitongLogUrl(xuexitongLogUrl);
+  }, [xuexitongLogUrl]);
+
+  useEffect(() => {
     setLocalXuexitongUsername(xuexitongUsername);
   }, [xuexitongUsername]);
 
@@ -99,6 +109,10 @@ const SettingsModal = ({
   useEffect(() => {
     setLocalScheduleTime(scheduleTime);
   }, [scheduleTime]);
+
+  useEffect(() => {
+    setLocalTitleTemplate(titleTemplate);
+  }, [titleTemplate]);
 
   const handleDetectBrowsers = async () => {
     try {
@@ -133,6 +147,10 @@ const SettingsModal = ({
     updateXuexitongUrl(localXuexitongUrl);
   };
 
+  const handleSaveXuexitongLogUrl = () => {
+    updateXuexitongLogUrl(localXuexitongLogUrl);
+  };
+
   const handleSaveXuexitongCreds = () => {
     updateXuexitongUsername(localXuexitongUsername);
     updateXuexitongPassword(localXuexitongPassword);
@@ -141,6 +159,10 @@ const SettingsModal = ({
   const handleSaveScheduleTime = () => {
     if (!localScheduleTime) return;
     updateScheduleTime(localScheduleTime);
+  };
+
+  const handleSaveTitleTemplate = () => {
+    updateTitleTemplate(localTitleTemplate);
   };
 
   return (
@@ -362,6 +384,39 @@ const SettingsModal = ({
                     </button>
                   </div>
                 </section>
+
+                {/* 10. 学习通标题模板设置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Type size={14} />
+                    <span>学习通笔记标题模板</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <textarea 
+                        value={localTitleTemplate}
+                        onChange={(e) => setLocalTitleTemplate(e.target.value)}
+                        placeholder="例如: [工作日志] {date} - {author}"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-4 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono min-h-[80px] resize-none"
+                      />
+                      <p className="text-[10px] text-gray-400 px-1">
+                        同步到学习通时的笔记标题。支持 {`{date}`} (YYYYMMDD格式)、{`{author}`}、{`{repo}`}。
+                      </p>
+                    </div>
+                    <button 
+                      onClick={handleSaveTitleTemplate}
+                      disabled={localTitleTemplate === titleTemplate}
+                      className={`w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                        localTitleTemplate === titleTemplate 
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
+                      }`}
+                    >
+                      <Check size={16} />
+                      保存标题模板
+                    </button>
+                  </div>
+                </section>
               </motion.div>
             )}
 
@@ -403,6 +458,41 @@ const SettingsModal = ({
                           <Check size={16} />
                         </button>
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-indigo-600 uppercase">工作日志页面 URL</label>
+                        {!xuexitongLogUrl && (
+                          <span className="flex items-center gap-1 text-[9px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                            <AlertCircle size={10} />
+                            需配置
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={localXuexitongLogUrl}
+                          onChange={(e) => setLocalXuexitongLogUrl(e.target.value)}
+                          placeholder="https://noteyd.chaoxing.com/pc/note_notebook/notebook_list?libId=0"
+                          className="flex-1 px-4 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button 
+                          onClick={handleSaveXuexitongLogUrl}
+                          disabled={localXuexitongLogUrl === xuexitongLogUrl}
+                          className={`p-2 rounded-xl transition-all shadow-sm ${
+                            localXuexitongLogUrl === xuexitongLogUrl
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          }`}
+                        >
+                          <Check size={16} />
+                        </button>
+                      </div>
+                      <p className="text-[9px] text-gray-400 leading-tight px-1">
+                        用于检查日志完成情况。<b>建议填入包含笔记列表的 URL</b>（例如带有 notebook_list 的链接）。
+                      </p>
                     </div>
 
                     <div className="space-y-2">

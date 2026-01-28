@@ -7,6 +7,7 @@ async function generateAILog(params) {
     const { logs, templateKey, customPrompt, tomorrowPlanPrompt, referenceLog, options, repoPaths } = params;
     // 优先使用传入的 apiKey，否则从环境变量获取
     const apiKey = params.apiKey || process.env.DEEPSEEK_API_KEY;
+    const titleTemplate = params.titleTemplate || process.env.TITLE_TEMPLATE;
 
     if (!apiKey) {
         throw new Error('未检测到 DeepSeek API Key，请在设置中配置后再试');
@@ -77,9 +78,18 @@ ${conciseSuffix}列表从 1. 开始计数。`;
 
     // 3. 准备日志上下文
     const hasLogs = logs && logs.length > 0;
-    const logContext = hasLogs
-        ? `以下是来自多个项目的提交记录详情。请注意：在生成日志时，**必须为每个项目使用独立的二级或三级标题（如 ### 项目名）来突出显示**，并在此标题下汇总该项目的内容：\n${logs.map(l => `- [项目:${l.repoName}] ${l.date} [${l.author_name}]: ${l.message}\n  [变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`).join('\n')}`
-        : "当前没有任何 Git 提交记录。请完全跳过“今日完成工作”等与代码提交相关的板块。请直接根据【补充内容】中的素材进行扩充和润色，生成一份连贯、专业的技术日志。";
+    const includeTomorrow = options?.includeTomorrow;
+    
+    let logContext = '';
+    if (hasLogs) {
+        logContext = `以下是来自多个项目的提交记录详情。请注意：在生成日志时，**必须为每个项目使用独立的二级或三级标题（如 ### 项目名）来突出显示**，并在此标题下汇总该项目的内容：\n${logs.map(l => `- [项目:${l.repoName}] ${l.date} [${l.author_name}]: ${l.message}\n  [变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`).join('\n')}`;
+    } else {
+        if (includeTomorrow && tomorrowPlanPrompt) {
+            logContext = "当前没有任何 Git 提交记录。请完全跳过“今日完成工作”等与代码提交相关的板块。请直接根据【补充内容】中的素材进行扩充和润色，生成一份连贯、专业的技术日志。";
+        } else {
+            logContext = "当前没有任何 Git 提交记录，且未提供任何补充素材。请生成一份简短的说明，表示今日无代码提交记录。";
+        }
+    }
 
     const prompt = `${templatePrompt}${customPrompt ? `\n附加要求：${customPrompt}` : ''}\n\n${logContext}
 
@@ -111,7 +121,14 @@ ${conciseSuffix}列表从 1. 开始计数。`;
                 messages: [
                     { 
                         role: 'system', 
-                        content: '你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下，用专业的行业术语进行润色和总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。\n\n**核心约束（强制执行）**：\n1. **标题规范**：严禁使用“明日计划”或“补充内容”作为固定标题。必须根据内容动态总结 ### [专业标题]。\n2. **无素材不标题**：如果没有 Git 提交记录，严禁出现“今日工作”等标题；如果没有遇到问题，严禁出现“遇到问题”等标题。\n3. **内容润色**：对于用户提供的素材，禁止生硬罗列。你必须进行二次创作，将其描述为一套连贯的学习或开发流程（如：研究方案 -> 实践编码 -> 总结验证）。\n4. **直接输出**：直接输出报告的 Markdown 内容，不要包含任何开场白或总结。\n5. **消除冗余**：严禁出现“基于 Git 记录”、“根据提交信息”等说明性文字。' 
+                        content: `你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下，用专业的行业术语进行润色和总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。
+
+**核心约束（强制执行）**：
+1. **标题规范**：严禁使用“明日计划”或“补充内容”作为固定标题。必须根据内容动态总结 ### [专业标题]。
+2. **无素材不标题**：如果没有 Git 提交记录，严禁出现“今日工作”等标题；如果没有遇到问题，严禁出现“遇到问题”等标题。
+3. **内容润色**：对于用户提供的素材，禁止生硬罗列。你必须进行二次创作，将其描述为一套连贯的学习或开发流程（如：研究方案 -> 实践编码 -> 总结验证）。
+4. **直接输出**：直接输出报告的 Markdown 内容，不要包含任何开场白或总结。
+5. **消除冗余**：严禁出现“基于 Git 记录”、“根据提交信息”等说明性文字。` 
                     },
                     { role: 'user', content: prompt }
                 ],

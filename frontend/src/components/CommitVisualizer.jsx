@@ -3,9 +3,33 @@ import dayjs from 'dayjs';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Eye, EyeOff, GitMerge, History, Activity } from 'lucide-react';
+import { Eye, EyeOff, GitMerge, History, Activity, Split, X, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 
-const CommitVisualizer = ({ logs, chartData, ignoredHashes, toggleIgnore, ignoreMerges }) => {
+const CommitVisualizer = ({ 
+  logs, 
+  chartData, 
+  ignoredHashes, 
+  toggleIgnore, 
+  ignoreMerges, 
+  splitIndex, 
+  setSplitIndex,
+  endDate,
+  splitDateOffset1,
+  setSplitDateOffset1,
+  splitDateOffset2,
+  setSplitDateOffset2
+}) => {
+  const getDisplayDate = (offset) => {
+    const d = dayjs(endDate).subtract(offset, 'day');
+    return d.format('M/D');
+  };
+
+  const getRelativeDay = (offset) => {
+    if (offset === 0) return '今日';
+    if (offset === 1) return '昨日';
+    if (offset === 2) return '前日';
+    return `${offset}天前`;
+  };
   const isAllMergesIgnored = () => {
     const mergeLogs = logs.filter(log => 
       log.message.toLowerCase().startsWith('merge ') || 
@@ -130,64 +154,180 @@ const CommitVisualizer = ({ logs, chartData, ignoredHashes, toggleIgnore, ignore
         </div>
         
         <div className="flex-1 overflow-y-auto p-6 pt-2 space-y-4 custom-scrollbar">
-          {logs.map((log, idx) => {
-            const isIgnored = ignoredHashes.has(log.hash);
-            return (
-              <div 
-                key={idx} 
-                className={`group relative p-4 rounded-2xl border transition-all duration-300 ${
-                  isIgnored 
-                    ? 'bg-gray-50 border-gray-100 opacity-50 grayscale' 
-                    : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md hover:shadow-blue-500/5'
-                }`}
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-black px-2 py-1 rounded-lg border uppercase tracking-tighter ${
-                      isIgnored ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-blue-50 text-blue-600 border-blue-100'
-                    }`}>
-                      #{log.hash.substring(0, 7)}
-                    </span>
-                    <span className={`text-[10px] px-2 py-1 rounded-lg uppercase font-black tracking-tighter border ${
-                      isIgnored ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                    }`}>
-                      {log.repoName}
-                    </span>
-                    <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
-                      <div className="w-1 h-1 rounded-full bg-gray-300"></div>
-                      {dayjs(log.date).format('MM-DD HH:mm')}
-                    </span>
-                  </div>
-                  
-                  <button 
-                    onClick={() => toggleIgnore(log.hash)}
-                    className={`p-2 rounded-xl transition-all ${
-                      isIgnored 
-                        ? 'bg-blue-50 text-blue-600' 
-                        : 'bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50'
-                    }`}
-                    title={isIgnored ? "恢复提交" : "忽略此提交"}
-                  >
-                    {isIgnored ? <Eye size={16} /> : <EyeOff size={16} />}
-                  </button>
+          {logs.length > 0 && splitIndex !== null && (
+            <div className="bg-blue-50/50 border border-blue-100/50 rounded-2xl p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                  <span className="text-[11px] font-black text-blue-600 uppercase tracking-widest">分段同步模式已开启</span>
                 </div>
-                
-                <p className={`text-sm font-bold leading-relaxed ${isIgnored ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                  {log.message}
-                </p>
-                
-                <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 uppercase">
-                      {log.author_name.substring(0, 2)}
+                <button 
+                  onClick={() => setSplitIndex(null)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-red-100 text-red-500 text-[10px] font-black uppercase hover:bg-red-50 transition-all shadow-sm"
+                >
+                  <X size={10} />
+                  退出分段模式
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Part 1 Date Picker */}
+                <div className="bg-white/60 p-2.5 rounded-xl border border-blue-100/50">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                    <Calendar size={10} />
+                    第一阶段日期 (上半部分)
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <button 
+                      onClick={() => setSplitDateOffset1(prev => prev + 1)}
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <div className="flex flex-col items-center">
+                      <span className="text-sm font-black text-blue-600">{getDisplayDate(splitDateOffset1)}</span>
+                      <span className="text-[9px] font-bold text-blue-400">{getRelativeDay(splitDateOffset1)}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-gray-500">{log.author_name}</span>
+                    <button 
+                      onClick={() => setSplitDateOffset1(prev => Math.max(0, prev - 1))}
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors disabled:opacity-30"
+                      disabled={splitDateOffset1 === 0}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
                   </div>
-                  {isIgnored && (
-                    <span className="text-[9px] font-black text-gray-300 uppercase italic tracking-widest">Skipped in generation</span>
-                  )}
+                </div>
+
+                {/* Part 2 Date Picker */}
+                <div className="bg-white/60 p-2.5 rounded-xl border border-blue-100/50">
+                  <p className="text-[9px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
+                    <Calendar size={10} />
+                    第二阶段日期 (下半部分)
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <button 
+                      onClick={() => setSplitDateOffset2(prev => prev + 1)}
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <div className="flex flex-col items-center">
+                      <span className="text-sm font-black text-indigo-600">{getDisplayDate(splitDateOffset2)}</span>
+                      <span className="text-[9px] font-bold text-indigo-400">{getRelativeDay(splitDateOffset2)}</span>
+                    </div>
+                    <button 
+                      onClick={() => setSplitDateOffset2(prev => Math.max(0, prev - 1))}
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors disabled:opacity-30"
+                      disabled={splitDateOffset2 === 0}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {logs.length > 0 && splitIndex !== null && (
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+              <span className="text-xs font-black text-blue-600 uppercase tracking-widest">
+                {getRelativeDay(splitDateOffset1)}提交 ({getDisplayDate(splitDateOffset1)})
+              </span>
+            </div>
+          )}
+
+          {logs.map((log, idx) => {
+            const isIgnored = ignoredHashes.has(log.hash);
+            const isSplitPoint = splitIndex === idx;
+            
+            return (
+              <React.Fragment key={idx}>
+                {isSplitPoint && (
+                  <div className="py-4 flex items-center gap-4">
+                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-200 to-transparent"></div>
+                    <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-50 border border-amber-100 shadow-sm">
+                      <Split size={14} className="text-amber-500" />
+                      <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                        {getRelativeDay(splitDateOffset2)}提交 ({getDisplayDate(splitDateOffset2)})
+                      </span>
+                    </div>
+                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-200 to-transparent"></div>
+                  </div>
+                )}
+                
+                <div 
+                  className={`group relative p-4 rounded-2xl border transition-all duration-300 ${
+                    isIgnored 
+                      ? 'bg-gray-50 border-gray-100 opacity-50 grayscale' 
+                      : (splitIndex !== null && idx >= splitIndex)
+                        ? 'bg-amber-50/30 border-amber-100 hover:border-amber-200 hover:shadow-md hover:shadow-amber-500/5'
+                        : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md hover:shadow-blue-500/5'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] font-black px-2 py-1 rounded-lg border uppercase tracking-tighter ${
+                        isIgnored ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-blue-50 text-blue-600 border-blue-100'
+                      }`}>
+                        #{log.hash.substring(0, 7)}
+                      </span>
+                      <span className={`text-[10px] px-2 py-1 rounded-lg uppercase font-black tracking-tighter border ${
+                        isIgnored ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                      }`}>
+                        {log.repoName}
+                      </span>
+                      <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
+                        <div className="w-1 h-1 rounded-full bg-gray-300"></div>
+                        {dayjs(log.date).format('MM-DD HH:mm')}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center gap-1">
+                      {splitIndex !== idx && (
+                        <button 
+                          onClick={() => setSplitIndex(idx)}
+                          className={`p-2 rounded-xl transition-all ${
+                            splitIndex === idx 
+                              ? 'bg-amber-500 text-white' 
+                              : 'bg-gray-50 text-gray-400 hover:text-amber-500 hover:bg-amber-50'
+                          }`}
+                          title="以此提交作为昨日日志的起点"
+                        >
+                          <Split size={16} />
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => toggleIgnore(log.hash)}
+                        className={`p-2 rounded-xl transition-all ${
+                          isIgnored 
+                            ? 'bg-blue-50 text-blue-600' 
+                            : 'bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50'
+                        }`}
+                        title={isIgnored ? "恢复提交" : "忽略此提交"}
+                      >
+                        {isIgnored ? <Eye size={16} /> : <EyeOff size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <p className={`text-sm font-bold leading-relaxed ${isIgnored ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                    {log.message}
+                  </p>
+                  
+                  <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-black text-gray-500 uppercase">
+                        {log.author_name.substring(0, 2)}
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-500">{log.author_name}</span>
+                    </div>
+                    {isIgnored && (
+                      <span className="text-[9px] font-black text-gray-300 uppercase italic tracking-widest">Skipped in generation</span>
+                    )}
+                  </div>
+                </div>
+              </React.Fragment>
             );
           })}
           
