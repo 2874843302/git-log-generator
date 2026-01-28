@@ -15,6 +15,7 @@ import SupplementModal from './components/SupplementModal';
 import TemplatePreviewModal from './components/TemplatePreviewModal';
 import SettingsModal from './components/SettingsModal';
 import FoolModeModal from './components/FoolModeModal';
+import ChatBot from './components/ChatBot';
 
 function App() {
   // 状态管理
@@ -82,6 +83,7 @@ function App() {
   const [updateError, setUpdateError] = useState('');
   const [checkingLogs, setCheckingLogs] = useState(false);
   const [missingLogDates, setMissingLogDates] = useState(null);
+  const [showLatestVersionTip, setShowLatestVersionTip] = useState(false); // 控制最新版本提示的显示
 
   useEffect(() => {
     fetchTemplates();
@@ -99,6 +101,10 @@ function App() {
 
     const removeNotAvailableListener = window.electron.receive('update-not-available', () => {
       setUpdateStatus('idle');
+      // 显示应用内提示
+      setShowLatestVersionTip(true);
+      // 3秒后自动隐藏提示
+      setTimeout(() => setShowLatestVersionTip(false), 3000);
     });
 
     const removeProgressListener = window.electron.receive('download-progress', (progress) => {
@@ -273,7 +279,18 @@ function App() {
    * 分段生成并同步多日日志
    */
   const handleSplitGenerateAndSync = React.useCallback(async () => {
-    if (splitIndex === null || logs.length === 0) return;
+    // 如果没有手动设置分割点，尝试按日期自动分割（第一部分为endDate，其余为之前）
+    let actualSplitIndex = splitIndex;
+    if (actualSplitIndex === null && logs.length > 0) {
+      const lastDate = dayjs(logs[0].date).format('YYYY-MM-DD');
+      actualSplitIndex = logs.findIndex(log => dayjs(log.date).format('YYYY-MM-DD') !== lastDate);
+      // 如果没找到不同日期的提交（全是同一天），则平分
+      if (actualSplitIndex === -1) {
+        actualSplitIndex = Math.ceil(logs.length / 2);
+      }
+    }
+
+    if (actualSplitIndex === null || logs.length === 0) return;
 
     setLoading(true);
     setError('');
@@ -286,7 +303,7 @@ function App() {
       
       logs.forEach((log, idx) => {
         if (ignoredHashes.has(log.hash)) return;
-        if (idx < splitIndex) {
+        if (idx < actualSplitIndex) {
           part1Logs.push(log);
         } else {
           part2Logs.push(log);
@@ -371,6 +388,116 @@ function App() {
       setLoading(false);
     }
   }, [splitIndex, logs, ignoredHashes, endDate, splitDateOffset1, splitDateOffset2, templateOptions, selectedTemplate, repoPaths, generateLog, handleSyncToXuexitong, playNotificationSound]);
+
+  /**
+   * 一键补全日志功能
+   * @param {string} mode - 补全模式: 'daily' (按天) 或 'average' (平均分配)
+   */
+  const handleAutoFillLogs = async (mode) => {
+    if (!missingLogDates || missingLogDates.length === 0 || loading) return;
+    
+    setLoading(true);
+    setError('');
+    
+    const results = [];
+    const validLogs = logs.filter(log => !ignoredHashes.has(log.hash));
+    
+    try {
+      console.log(`[一键补全] 开始执行，模式: ${mode}，缺失日期: ${missingLogDates.length} 天，有效提交: ${validLogs.length} 条`);
+      
+      // 按日期分组日志 (用于 daily 模式)
+      const logsByDate = {};
+      validLogs.forEach(log => {
+        const logDate = dayjs(log.date).format('YYYY-MM-DD');
+        if (!logsByDate[logDate]) {
+          logsByDate[logDate] = [];
+        }
+        logsByDate[logDate].push(log);
+      });
+      
+      // 准备补全数据
+      const fillData = [];
+      
+      if (mode === 'daily') {
+        // 模式1: 按天补全 - 为每个缺失日期分配对应日期的提交
+        for (const missDate of missingLogDates) {
+          // 将 20260128 格式转换为 2026-01-28
+          const formattedDate = `${missDate.substring(0, 4)}-${missDate.substring(4, 6)}-${missDate.substring(6, 8)}`;
+          const dayLogs = logsByDate[formattedDate] || [];
+          
+          fillData.push({ date: missDate, logs: dayLogs });
+        }
+      } else {
+        // 模式2: 平均分配 - 将所有提交平均分给缺失的日期
+        const logsPerDay = Math.ceil(validLogs.length / missingLogDates.length);
+        let currentLogIndex = 0;
+        
+        for (const missDate of missingLogDates) {
+          const endIndex = Math.min(currentLogIndex + logsPerDay, validLogs.length);
+          const dayLogs = validLogs.slice(currentLogIndex, endIndex);
+          
+          fillData.push({ date: missDate, logs: dayLogs });
+          currentLogIndex = endIndex;
+        }
+      }
+      
+      // 并行生成 AI 日志内容
+      console.log('[一键补全] 正在并行生成 AI 日志内容...');
+      const generationPromises = fillData.map(item => {
+        if (item.logs.length === 0) {
+          return Promise.resolve({ date: item.date, content: null, error: '该日期无可用提交记录' });
+        }
+        
+        const formattedDate = `${item.date.substring(0, 4)}-${item.date.substring(4, 6)}-${item.date.substring(6, 8)}`;
+        const options = { ...templateOptions, includeTomorrow: false };
+        
+        return generateLog(item.logs, selectedTemplate, repoPaths, options)
+          .then(content => ({ date: formattedDate, content, error: null }))
+          .catch(err => ({ date: formattedDate, content: null, error: err.message }));
+      });
+      
+      const generatedContents = await Promise.all(generationPromises);
+      console.log(`[一键补全] AI 内容生成完毕 (共 ${generatedContents.length} 份)`);
+      
+      // 串行同步到学习通 (保持串行以避免并发冲突)
+      console.log('[一键补全] 正在串行同步到学习通...');
+      for (const item of generatedContents) {
+        if (item.content) {
+          const syncResult = await handleSyncToXuexitong(item.content, false, item.date, true, true);
+          results.push({ ...syncResult, date: item.date });
+          
+          // 同步间隔 2 秒，避免请求过于频繁
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          results.push({ success: false, date: item.date, error: item.error || '生成内容失败' });
+        }
+      }
+      
+      // 统计结果
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+      
+      console.log(`[一键补全] 执行完毕，成功: ${successCount}，失败: ${failureCount}`);
+      
+      // 显示通知
+      api.showNotification({
+        title: '一键补全完成',
+        body: `成功补全 ${successCount} 天日志，失败 ${failureCount} 天`,
+        silent: false
+      });
+      
+      playNotificationSound(successCount > 0 ? 'success' : 'failure');
+      
+      // 移除自动重新检查，改为让用户手动触发
+      
+    } catch (err) {
+      console.error('[一键补全] 出错:', err);
+      setError(`一键补全失败: ${err.message}`);
+      playNotificationSound('failure');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /**
    * 傻瓜模式一键生成逻辑
@@ -937,6 +1064,7 @@ function App() {
             checkLogs={handleCheckLogs}
             checkingLogs={checkingLogs}
             missingLogDates={missingLogDates}
+            autoFillLogs={handleAutoFillLogs}
             openBranchPicker={(pos) => {
               setBranchPickerOpen(true);
               setBranchPickerPos(pos);
@@ -989,7 +1117,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.3.0</span>
+                  <span>Version 2.4.0</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
@@ -1051,6 +1179,21 @@ function App() {
                  处理中...
                </div>
              )}
+
+             {/* 最新版本提示 */}
+             <AnimatePresence>
+               {showLatestVersionTip && (
+                 <motion.div 
+                   initial={{ opacity: 0, y: -10 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   exit={{ opacity: 0, y: -10 }}
+                   className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-medium rounded-full shadow-sm"
+                 >
+                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                   已是最新版本
+                 </motion.div>
+               )}
+             </AnimatePresence>
           </div>
         </header>
 
@@ -1329,6 +1472,19 @@ function App() {
             />
           )}
         </AnimatePresence>
+
+      {/* AI 聊天助手 */}
+      <ChatBot actions={{
+        checkLogs: handleCheckLogs,
+        autoFillLogs: handleAutoFillLogs,
+        splitGenerateAndSync: (offset1, offset2) => {
+          setSplitDateOffset1(offset1);
+          setSplitDateOffset2(offset2);
+          // 稍微延迟确保状态更新，或者可以直接调用
+          setTimeout(() => handleSplitGenerateAndSync(), 100);
+        },
+        openSettings: () => setSettingsModalOpen(true)
+      }} />
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {

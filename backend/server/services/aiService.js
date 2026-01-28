@@ -168,6 +168,122 @@ ${conciseSuffix}列表从 1. 开始计数。`;
     }
 }
 
+/**
+ * 聊天助手：小飞
+ */
+async function chatWithAssistant(params) {
+    const { messages, apiKey: userApiKey } = params;
+    const apiKey = userApiKey || process.env.DEEPSEEK_API_KEY;
+
+    if (!apiKey) {
+        throw new Error('未检测到 DeepSeek API Key，请在设置中配置后再试');
+    }
+
+    try {
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: [
+                    { 
+                        role: 'system', 
+                        content: `你是“小飞”，一个集成在 Git 工作日志自动生成工具中的 AI 助手。
+你的主要职责是：
+1. 辅助用户使用该应用（解答关于 Git 提交、日志生成、学习通同步等功能的问题）。
+2. 提供专业的技术建议和日志润色建议。
+3. 保持友好、专业、简洁的沟通风格。
+
+应用核心功能点：
+- Git 日志检索：支持多仓库、多作者、日期范围筛选。
+- AI 日志生成：支持多种模版（简洁、详细、KPI、周报、自定义）。
+- 学习通同步：一键将生成的 Markdown 内容同步到学习通笔记，支持静默模式和浏览器模式。
+- 分段生成：支持将工作内容分割到不同日期（如昨日和今日）并分别同步。
+- 傻瓜模式：一键完成检索、生成和同步。
+- 一键补全：自动检查缺失日志并根据 Git 记录补全。
+
+你可以通过调用工具来直接帮助用户执行操作。如果用户表达了想要检查日志、补全日志、分段同步等意图，请主动调用相应的工具。` 
+                    },
+                    ...messages
+                ],
+                tools: [
+                    {
+                        type: "function",
+                        function: {
+                            name: "check_logs",
+                            description: "检查学习通上的工作日志提交情况，识别哪些日期漏报了。",
+                            parameters: {
+                                type: "object",
+                                properties: {},
+                                required: []
+                            }
+                        }
+                    },
+                    {
+                        type: "function",
+                        function: {
+                            name: "auto_fill_logs",
+                            description: "自动补全缺失的工作日志并同步到学习通。",
+                            parameters: {
+                                type: "object",
+                                properties: {
+                                    mode: {
+                                        type: "string",
+                                        enum: ["daily", "average"],
+                                        description: "补全模式：'daily' 表示按天匹配提交记录，'average' 表示将所有提交平均分配到缺失日期。"
+                                    }
+                                },
+                                required: ["mode"]
+                            }
+                        }
+                    },
+                    {
+                        type: "function",
+                        function: {
+                            name: "split_generate_and_sync",
+                            description: "将当前的 Git 提交记录分段生成为两天的日志并同步到学习通。",
+                            parameters: {
+                                type: "object",
+                                properties: {
+                                    offset1: {
+                                        type: "number",
+                                        description: "第一部分日志的日期偏移（天），例如 1 代表昨天。"
+                                    },
+                                    offset2: {
+                                        type: "number",
+                                        description: "第二部分日志的日期偏移（天），例如 0 代表今天。"
+                                    }
+                                },
+                                required: ["offset1", "offset2"]
+                            }
+                        }
+                    }
+                ],
+                stream: false
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`AI 服务调用失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const message = data.choices[0].message;
+        
+        return { 
+            content: message.content || '',
+            tool_calls: message.tool_calls || null
+        };
+    } catch (error) {
+        console.error('Chat Assistant Error:', error);
+        throw error;
+    }
+}
+
 module.exports = {
-    generateAILog
+    generateAILog,
+    chatWithAssistant
 };

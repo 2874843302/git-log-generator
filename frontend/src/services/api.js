@@ -23,6 +23,7 @@ const api = {
   // AI & 模版相关
   getTemplates: () => window.electron.invoke('api:getTemplates'),
   generateAiLog: (data) => window.electron.invoke('api:generateAiLog', data),
+  chatWithAssistant: (data) => window.electron.invoke('api:chatWithAssistant', data),
 
   // 学习通相关
   createXuexitongNote: (data) => window.electron.invoke('api:createXuexitongNote', data),

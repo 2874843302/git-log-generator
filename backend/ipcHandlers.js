@@ -228,7 +228,7 @@ function registerIpcHandlers() {
       
       // 额外等待一下确保异步加载完成
       console.log('[Backend] Giving page extra time to stabilize...');
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(1000); // 从 3000 减少到 1000
       
       // 滚动一下确保加载更多内容
       console.log('[Backend] Scrolling to ensure list items are rendered...');
@@ -236,7 +236,7 @@ function registerIpcHandlers() {
         const list = document.querySelector('.itemList') || document.querySelector('#activitysMe') || document.body;
         list.scrollIntoView({ behavior: 'smooth', block: 'end' });
       });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(1000); // 从 2000 减少到 1000
 
       // 获取所有可能的标题文本
       console.log('[Backend] Extracting note titles...');
@@ -265,8 +265,13 @@ function registerIpcHandlers() {
         const month = target.substring(4, 6);
         const day = target.substring(6, 8);
         
-        // 更加宽松的匹配逻辑
-        const regex = new RegExp(`${year}.*?${month}.*?${day}`);
+        // 处理月份和日期的前导0，支持两种格式
+        const normalizedMonth = month.replace(/^0/, ''); // 01 -> 1
+        const normalizedDay = day.replace(/^0/, ''); // 08 -> 8
+        
+        // 更加宽松的匹配逻辑，支持多种日期格式
+        // 同时匹配带前导0和不带前导0的情况
+        const regex = new RegExp(`${year}.*?(${month}|${normalizedMonth}).*?(${day}|${normalizedDay})`);
         return !titles.some(title => regex.test(title) || title.includes(target));
       });
 
@@ -281,10 +286,11 @@ function registerIpcHandlers() {
       console.error('检查学习通日志失败:', error);
       throw new Error('检查失败: ' + error.message);
     } finally {
-      if (headless) {
-        await closeBrowser();
+        // 不再每次检查都关闭浏览器，改为保持实例运行
+        // if (headless) {
+        //   await closeBrowser();
+        // }
       }
-    }
   });
 
   // Folder & Config 相关
@@ -519,6 +525,14 @@ function registerIpcHandlers() {
       ...data,
       logs: enrichedLogs,
       titleTemplate: getSetting('TITLE_TEMPLATE') || ''
+    });
+  });
+
+  // AI 聊天助手相关
+  ipcMain.handle('api:chatWithAssistant', async (event, data) => {
+    return await aiService.chatWithAssistant({
+      ...data,
+      apiKey: getSetting('DEEPSEEK_API_KEY')
     });
   });
 

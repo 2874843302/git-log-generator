@@ -22,6 +22,7 @@ const ConfigPanel = ({
   checkLogs,
   checkingLogs,
   missingLogDates,
+  autoFillLogs,
   xuexitongLogUrl,
   openBranchPicker,
   openSettings,
@@ -140,21 +141,44 @@ const ConfigPanel = ({
                           <AlertCircle size={12} className="shrink-0" />
                           <span>缺失日志 ({missingLogDates.length} 天)</span>
                         </div>
-                        <div className="grid grid-cols-3 gap-1 mt-1">
-                          {missingLogDates.map(date => {
-                            // 将 20260128 转换为 1/28 格式
-                            const month = parseInt(date.substring(4, 6));
-                            const day = parseInt(date.substring(6, 8));
-                            const displayDate = `${month}/${day}`;
-                            
-                            return (
-                              <div key={date} className="bg-white/60 px-1.5 py-1 rounded-lg border border-amber-200/50 text-center font-mono text-[9px] font-bold">
-                                {displayDate}
-                              </div>
-                            );
-                          })}
-                        </div>
+                      <div className="grid grid-cols-3 gap-1 mt-1">
+                        {missingLogDates.map(date => {
+                          // 将 20260128 转换为 1/28 格式
+                          const month = parseInt(date.substring(4, 6));
+                          const day = parseInt(date.substring(6, 8));
+                          const displayDate = `${month}/${day}`;
+                          
+                          return (
+                            <div key={date} className="bg-white/60 px-1.5 py-1 rounded-lg border border-amber-200/50 text-center font-mono text-[9px] font-bold">
+                              {displayDate}
+                            </div>
+                          );
+                        })}
                       </div>
+                      
+                      {/* 一键补全按钮 */}
+                      <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-amber-200/50">
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => autoFillLogs('daily')}
+                            disabled={loading}
+                            className="flex-1 py-1.5 rounded-lg bg-blue-600 text-white text-[9px] font-bold hover:bg-blue-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm"
+                          >
+                            按天补全
+                          </button>
+                          <button
+                            onClick={() => autoFillLogs('average')}
+                            disabled={loading}
+                            className="flex-1 py-1.5 rounded-lg bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm"
+                          >
+                            平均分配
+                          </button>
+                        </div>
+                        <p className="text-[8px] text-amber-600 opacity-80 italic">
+                          补全后将自动同步到学习通
+                        </p>
+                      </div>
+                    </div>
                     )}
                   </div>
                 </motion.div>
