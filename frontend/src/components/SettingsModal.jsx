@@ -12,8 +12,6 @@ const SettingsModal = ({
   updateApiKey, 
   defaultUser,
   updateDefaultUser,
-  xuexitongUrl,
-  updateXuexitongUrl,
   xuexitongLogUrl,
   updateXuexitongLogUrl,
   xuexitongUsername,
@@ -42,7 +40,6 @@ const SettingsModal = ({
 }) => {
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localDefaultUser, setLocalDefaultUser] = useState(defaultUser);
-  const [localXuexitongUrl, setLocalXuexitongUrl] = useState(xuexitongUrl);
   const [localXuexitongLogUrl, setLocalXuexitongLogUrl] = useState(xuexitongLogUrl);
   const [localXuexitongUsername, setLocalXuexitongUsername] = useState(xuexitongUsername);
   const [localXuexitongPassword, setLocalXuexitongPassword] = useState(xuexitongPassword);
@@ -85,10 +82,6 @@ const SettingsModal = ({
   useEffect(() => {
     setLocalDefaultUser(defaultUser);
   }, [defaultUser]);
-
-  useEffect(() => {
-    setLocalXuexitongUrl(xuexitongUrl);
-  }, [xuexitongUrl]);
 
   useEffect(() => {
     setLocalXuexitongLogUrl(xuexitongLogUrl);
@@ -141,10 +134,6 @@ const SettingsModal = ({
 
   const handleSaveUser = () => {
     updateDefaultUser(localDefaultUser.toLowerCase().replace(/\s+/g, ''));
-  };
-
-  const handleSaveXuexitongUrl = () => {
-    updateXuexitongUrl(localXuexitongUrl);
   };
 
   const handleSaveXuexitongLogUrl = () => {
@@ -437,30 +426,6 @@ const SettingsModal = ({
                   </div>
                   <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 space-y-4">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-indigo-600 uppercase">笔记页面 URL</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="text"
-                          value={localXuexitongUrl}
-                          onChange={(e) => setLocalXuexitongUrl(e.target.value)}
-                          placeholder="https://note.chaoxing.com/pc/index"
-                          className="flex-1 px-4 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        />
-                        <button 
-                          onClick={handleSaveXuexitongUrl}
-                          disabled={localXuexitongUrl === xuexitongUrl}
-                          className={`p-2 rounded-xl transition-all shadow-sm ${
-                            localXuexitongUrl === xuexitongUrl
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                          }`}
-                        >
-                          <Check size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-bold text-indigo-600 uppercase">工作日志页面 URL</label>
                         {!xuexitongLogUrl && (
@@ -491,7 +456,7 @@ const SettingsModal = ({
                         </button>
                       </div>
                       <p className="text-[9px] text-gray-400 leading-tight px-1">
-                        用于检查日志完成情况。<b>建议填入包含笔记列表的 URL</b>（例如带有 notebook_list 的链接）。
+                        用于检查日志完成情况及同步笔记。<b>建议填入包含笔记列表的 URL</b>（例如带有 notebook_list 的链接）。
                       </p>
                     </div>
 

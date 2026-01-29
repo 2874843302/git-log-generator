@@ -162,9 +162,13 @@ const ConfigPanel = ({
                           <button
                             onClick={() => autoFillLogs('daily')}
                             disabled={loading}
-                            className="flex-1 py-1.5 rounded-lg bg-blue-600 text-white text-[9px] font-bold hover:bg-blue-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm"
+                            className="flex-1 py-1.5 rounded-lg bg-blue-600 text-white text-[9px] font-bold hover:bg-blue-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm group relative"
+                            title="自动获取选中仓库在缺失日期的提交并补全"
                           >
                             按天补全
+                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-[8px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl">
+                              自动查询 Git 记录并同步
+                            </span>
                           </button>
                           <button
                             onClick={() => autoFillLogs('average')}
@@ -175,7 +179,7 @@ const ConfigPanel = ({
                           </button>
                         </div>
                         <p className="text-[8px] text-amber-600 opacity-80 italic">
-                          补全后将自动同步到学习通
+                          补全后将自动同步到学习通。<b>按天补全</b>会自动查询所选仓库记录。
                         </p>
                       </div>
                     </div>

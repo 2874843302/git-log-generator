@@ -90,7 +90,7 @@ function registerIpcHandlers() {
     console.log(`[Backend] checkXuexitongLogs called. headless: ${headless}`);
     
     // 优先从环境变量获取，如果没有则使用默认 URL
-    const targetUrl = process.env.XUEXITONG_LOG_CHECK_URL || process.env.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index';
+    const targetUrl = process.env.XUEXITONG_LOG_CHECK_URL || 'https://note.chaoxing.com/pc/index';
     const username = process.env.XUEXITONG_USERNAME;
     const password = process.env.XUEXITONG_PASSWORD;
     const customBrowserPath = process.env.BROWSER_PATH;
@@ -374,7 +374,7 @@ function registerIpcHandlers() {
       BASE_REPO_DIR: '',
       DEEPSEEK_API_KEY: '',
       DEFAULT_USER: '',
-      XUEXITONG_NOTE_URL: 'https://note.chaoxing.com/pc/index',
+      XUEXITONG_LOG_CHECK_URL: 'https://note.chaoxing.com/pc/index',
       XUEXITONG_USERNAME: '',
       XUEXITONG_PASSWORD: '',
       LAST_SELECTED_REPOS: '',
@@ -546,7 +546,7 @@ function registerIpcHandlers() {
        return undefined;
      };
 
-    const targetUrl = process.env.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index';
+    const targetUrl = process.env.XUEXITONG_LOG_CHECK_URL || 'https://note.chaoxing.com/pc/index';
     const username = process.env.XUEXITONG_USERNAME;
     const password = process.env.XUEXITONG_PASSWORD;
     const customBrowserPath = process.env.BROWSER_PATH;
@@ -646,13 +646,14 @@ function registerIpcHandlers() {
         }
       }
 
-      // 4. 确保进入笔记页面
-      const noteMenuSelector = 'div[name="笔记"]';
-      const isNotePage = page.url().includes('note.chaoxing.com/pc/index') || page.url().includes('noteyd.chaoxing.com/pc/index');
+      // 4. 确保进入笔记页面 (如果使用了工作日志 URL，通常已在对应页面)
+      const isNotePage = page.url().includes('note.chaoxing.com') || page.url().includes('noteyd.chaoxing.com');
       
       if (!isNotePage) {
+        console.log('未检测到笔记域名，尝试点击菜单或直接跳转...');
+        const noteMenuSelector = 'div[name="笔记"]';
         try {
-          const menuBtn = await page.waitForSelector(noteMenuSelector, { timeout: 8000 });
+          const menuBtn = await page.waitForSelector(noteMenuSelector, { timeout: 5000 });
           if (menuBtn) {
             await menuBtn.click();
             await page.waitForTimeout(500);

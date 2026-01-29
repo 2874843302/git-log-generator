@@ -50,7 +50,6 @@ function App() {
   const [baseDir, setBaseDir] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [defaultUser, setDefaultUser] = useState('');
-  const [xuexitongUrl, setXuexitongUrl] = useState('https://note.chaoxing.com/pc/index');
   const [xuexitongLogUrl, setXuexitongLogUrl] = useState('https://note.chaoxing.com/pc/index');
   const [xuexitongUsername, setXuexitongUsername] = useState('');
   const [xuexitongPassword, setXuexitongPassword] = useState('');
@@ -396,13 +395,43 @@ function App() {
   const handleAutoFillLogs = async (mode) => {
     if (!missingLogDates || missingLogDates.length === 0 || loading) return;
     
+    if (!repoPaths || repoPaths.length === 0) {
+      setError('未选择任何仓库，请先在左侧选择需要补全记录的仓库');
+      return;
+    }
+
     setLoading(true);
     setError('');
     
     const results = [];
-    const validLogs = logs.filter(log => !ignoredHashes.has(log.hash));
     
     try {
+      let currentLogs = logs;
+      
+      // 如果是按天补全，自动获取缺失日期的提交记录
+      if (mode === 'daily') {
+        // 获取缺失日期的范围
+        const sortedDates = [...missingLogDates].sort();
+        const firstDate = sortedDates[0];
+        const lastDate = sortedDates[sortedDates.length - 1];
+        
+        const start = `${firstDate.substring(0, 4)}-${firstDate.substring(4, 6)}-${firstDate.substring(6, 8)}`;
+        const end = `${lastDate.substring(0, 4)}-${lastDate.substring(4, 6)}-${lastDate.substring(6, 8)}`;
+        
+        console.log(`[一键补全] 正在自动获取 Git 日志 (${start} 至 ${end})...`);
+        const res = await api.getGitLogs({
+          repoPaths,
+          startDate: start,
+          endDate: end,
+          author: defaultUser,
+          branches: {}
+        });
+        
+        currentLogs = res.logs || [];
+        setLogs(currentLogs); // 同步更新主界面的日志列表
+      }
+
+      const validLogs = currentLogs.filter(log => !ignoredHashes.has(log.hash));
       console.log(`[一键补全] 开始执行，模式: ${mode}，缺失日期: ${missingLogDates.length} 天，有效提交: ${validLogs.length} 条`);
       
       // 按日期分组日志 (用于 daily 模式)
@@ -508,6 +537,34 @@ function App() {
     
     // 1. 设置基础状态
     const today = targetDate || dayjs().format('YYYY-MM-DD');
+    
+    // 如果是定时任务触发（headless模式），先检查今天是否已有日志
+    if (headless) {
+      console.log(`[定时任务] 正在检查 ${today} 是否已存在日志...`);
+      setLoading(true);
+      try {
+        const checkRes = await api.checkXuexitongLogs({ headless: true });
+        if (checkRes.success) {
+          const todayFormatted = dayjs(today).format('YYYYMMDD');
+          const isMissing = checkRes.missingDates.includes(todayFormatted);
+          
+          if (!isMissing) {
+            console.log(`[定时任务] ${today} 已存在日志记录，跳过生成`);
+            api.showNotification({
+              title: '今日日志已存在',
+              body: '检测到学习通今日已有日志记录，暂不覆盖同步。',
+              silent: false
+            });
+            playNotificationSound('success');
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (checkErr) {
+        console.error('[定时任务] 检查日志存在性失败，继续执行同步流程:', checkErr);
+      }
+    }
+
     setStartDate(today);
     setEndDate(today);
     setRepoPaths(selectedRepos);
@@ -718,8 +775,7 @@ function App() {
       setBaseDir(res.BASE_REPO_DIR || '');
       setApiKey(res.DEEPSEEK_API_KEY || '');
       setDefaultUser(res.DEFAULT_USER || '');
-      setXuexitongUrl(res.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
-      setXuexitongLogUrl(res.XUEXITONG_LOG_CHECK_URL || res.XUEXITONG_NOTE_URL || 'https://note.chaoxing.com/pc/index');
+      setXuexitongLogUrl(res.XUEXITONG_LOG_CHECK_URL || 'https://note.chaoxing.com/pc/index');
       setXuexitongUsername(res.XUEXITONG_USERNAME || '');
       setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
       setBrowserPath(res.BROWSER_PATH || '');
@@ -802,7 +858,6 @@ function App() {
       if (key === 'BASE_REPO_DIR') setBaseDir(value);
       if (key === 'DEEPSEEK_API_KEY') setApiKey(value);
       if (key === 'DEFAULT_USER') setDefaultUser(value);
-      if (key === 'XUEXITONG_NOTE_URL') setXuexitongUrl(value);
       if (key === 'XUEXITONG_LOG_CHECK_URL') setXuexitongLogUrl(value);
       if (key === 'XUEXITONG_USERNAME') setXuexitongUsername(value);
       if (key === 'XUEXITONG_PASSWORD') setXuexitongPassword(value);
@@ -1432,8 +1487,6 @@ function App() {
               updateApiKey={(val) => updateConfig('DEEPSEEK_API_KEY', val)}
               defaultUser={defaultUser}
               updateDefaultUser={(val) => updateConfig('DEFAULT_USER', val)}
-              xuexitongUrl={xuexitongUrl}
-              updateXuexitongUrl={(val) => updateConfig('XUEXITONG_NOTE_URL', val)}
               xuexitongUsername={xuexitongUsername}
               updateXuexitongUsername={(val) => updateConfig('XUEXITONG_USERNAME', val)}
               xuexitongPassword={xuexitongPassword}
