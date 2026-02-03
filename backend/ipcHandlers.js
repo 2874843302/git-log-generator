@@ -261,18 +261,51 @@ function registerIpcHandlers() {
       // 6. 比对结果
       console.log('[Backend] Comparing found titles with target dates...');
       const missingDates = targetDateStrings.filter(target => {
+        // 1. 首先检查是否有精确匹配（标题完全包含 YYYYMMDD 格式）
+        const hasExactMatch = titles.some(title => title.includes(target));
+        if (hasExactMatch) {
+          console.log(`[Backend] Found exact match for ${target}`);
+          return false; // 不包含在缺失列表中
+        }
+        
+        // 2. 如果没有精确匹配，检查是否有其他日期格式（如 2026-02-03, 2026/02/03, 02/03/2026 等）
         const year = target.substring(0, 4);
         const month = target.substring(4, 6);
         const day = target.substring(6, 8);
         
-        // 处理月份和日期的前导0，支持两种格式
+        // 处理月份和日期的前导0
         const normalizedMonth = month.replace(/^0/, ''); // 01 -> 1
         const normalizedDay = day.replace(/^0/, ''); // 08 -> 8
         
-        // 更加宽松的匹配逻辑，支持多种日期格式
-        // 同时匹配带前导0和不带前导0的情况
-        const regex = new RegExp(`${year}.*?(${month}|${normalizedMonth}).*?(${day}|${normalizedDay})`);
-        return !titles.some(title => regex.test(title) || title.includes(target));
+        // 只匹配完整的日期格式，避免零散数字组合匹配
+        // 支持：YYYY-MM-DD, YYYY/MM/DD, MM-DD-YYYY, MM/DD/YYYY, YYYY年MM月DD日
+        // 以及不带分隔符的精确格式（如 YYYYMMDD, YYYYMD, YYYYMMD, YYYYMD 等）
+        const exactFormats = [
+          `${year}[-/]${month}[-/]${day}`, // 2026-02-03, 2026/02/03
+          `${year}[-/]${normalizedMonth}[-/]${normalizedDay}`, // 2026-2-3, 2026/2/3
+          `${month}[-/]${day}[-/]${year}`, // 02-03-2026, 02/03/2026
+          `${normalizedMonth}[-/]${normalizedDay}[-/]${year}`, // 2-3-2026, 2/3/2026
+          `${year}年${month}月${day}日`, // 2026年02月03日
+          `${year}年${normalizedMonth}月${normalizedDay}日`, // 2026年2月3日
+          `${year}${month}${day}`, // 20260203
+          `${year}${normalizedMonth}${day}`, // 2026203
+          `${year}${month}${normalizedDay}`, // 2026023
+          `${year}${normalizedMonth}${normalizedDay}` // 202623
+        ];
+        
+        // 检查是否有任何格式匹配
+        const hasFormatMatch = titles.some(title => {
+          return exactFormats.some(format => title.includes(format));
+        });
+        
+        if (hasFormatMatch) {
+          console.log(`[Backend] Found format match for ${target}`);
+          return false; // 不包含在缺失列表中
+        }
+        
+        // 3. 如果都没有匹配，则认为是缺失的
+        console.log(`[Backend] No match found for ${target}`);
+        return true;
       });
 
       return { 
