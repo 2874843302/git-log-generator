@@ -729,6 +729,51 @@ function registerIpcHandlers() {
         notePage = page;
       }
 
+      // 6. 切换笔记本逻辑 (新增)
+      console.log('正在检查笔记本分类...');
+      try {
+        // 优化：移除不稳定的 networkidle 等待，直接等待关键元素
+        await notePage.waitForLoadState('domcontentloaded');
+        
+        // 检查当前选中的笔记本名称
+        const currentFolderSelector = '.nowFolder .foldername';
+        const currentFolderEl = await notePage.waitForSelector(currentFolderSelector, { timeout: 8000 });
+        const currentFolderName = await currentFolderEl?.innerText();
+        
+        console.log(`当前笔记本分类: ${currentFolderName}`);
+        
+        if (currentFolderName && !currentFolderName.includes('工作日志')) {
+          console.log('检测到当前不是“工作日志”，正在尝试切换...');
+          
+          // 1. 点击切换按钮 (整个 .nowFolder 区域)
+          await notePage.click('.nowFolder');
+          
+          // 2. 处理弹出的 iframe
+          const iframeSelector = 'iframe#selectNoteFolder';
+          const iframeElement = await notePage.waitForSelector(iframeSelector, { timeout: 5000 });
+          const iframe = await iframeElement.contentFrame();
+          
+          if (iframe) {
+            console.log('正在从选择框中查找“工作日志”...');
+            // 在 iframe 中查找包含“工作日志”文字的 .notebook_item
+            // 优先查找最近列表中的工作日志
+            const targetFolderSelector = '.notebook_item:has-text("工作日志")';
+            await iframe.waitForSelector(targetFolderSelector, { timeout: 5000 });
+            await iframe.click(targetFolderSelector);
+            
+            console.log('已点击“工作日志”，等待页面更新...');
+            // 等待弹窗消失或页面刷新
+            await notePage.waitForTimeout(1000);
+          } else {
+            console.warn('未找到选择笔记本的 iframe，尝试继续同步...');
+          }
+        } else {
+          console.log('确认当前已是“工作日志”或无法识别分类，继续同步...');
+        }
+      } catch (folderError) {
+        console.warn('检查/切换笔记本失败:', folderError.message, '尝试继续同步...');
+      }
+
       // 6. 填充标题和内容 - 优化：直接通过 JS 注入，并增加备选方案
       console.log('正在注入笔记内容...');
       await notePage.waitForLoadState('domcontentloaded');
