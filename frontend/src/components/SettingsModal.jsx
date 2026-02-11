@@ -32,6 +32,12 @@ const SettingsModal = ({
   updateScheduleTime,
   titleTemplate,
   updateTitleTemplate,
+  emailAddress,
+  updateEmailAddress,
+  dailyEmailEnabled,
+  updateDailyEmailEnabled,
+  weeklyEmailEnabled,
+  updateWeeklyEmailEnabled,
   initEnv,
   loading,
   originPos,
@@ -46,6 +52,7 @@ const SettingsModal = ({
   const [localBrowserPath, setLocalBrowserPath] = useState(browserPath);
   const [localScheduleTime, setLocalScheduleTime] = useState(scheduleTime);
   const [localTitleTemplate, setLocalTitleTemplate] = useState(titleTemplate);
+  const [localEmailAddress, setLocalEmailAddress] = useState(emailAddress || '');
   const [detectedBrowsers, setDetectedBrowsers] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -53,6 +60,8 @@ const SettingsModal = ({
   const [activeTab, setActiveTab] = useState('general'); // general, automation, system
   const [soundList, setSoundList] = useState([]);
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState({ loading: false, result: null }); // null, 'success', 'error'
+  const [testEmailError, setTestEmailError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -107,6 +116,10 @@ const SettingsModal = ({
     setLocalTitleTemplate(titleTemplate);
   }, [titleTemplate]);
 
+  useEffect(() => {
+    setLocalEmailAddress(emailAddress || '');
+  }, [emailAddress]);
+
   const handleDetectBrowsers = async () => {
     try {
       setIsDetecting(true);
@@ -152,6 +165,38 @@ const SettingsModal = ({
 
   const handleSaveTitleTemplate = () => {
     updateTitleTemplate(localTitleTemplate);
+  };
+
+  const handleSaveEmail = () => {
+    updateEmailAddress(localEmailAddress);
+  };
+
+  const handleTestEmail = async () => {
+    if (!localEmailAddress) {
+      setTestEmailStatus({ loading: false, result: 'error' });
+      setTestEmailError('请先输入收件邮箱地址');
+      setTimeout(() => setTestEmailStatus({ loading: false, result: null }), 3000);
+      return;
+    }
+
+    setTestEmailStatus({ loading: true, result: null });
+    setTestEmailError('');
+    
+    try {
+      const result = await api.sendTestEmail(localEmailAddress);
+      if (result.success) {
+        setTestEmailStatus({ loading: false, result: 'success' });
+        setTimeout(() => setTestEmailStatus({ loading: false, result: null }), 5000);
+      } else {
+        setTestEmailStatus({ loading: false, result: 'error' });
+        setTestEmailError(result.error || '发送失败');
+        setTimeout(() => setTestEmailStatus({ loading: false, result: null }), 8000);
+      }
+    } catch (err) {
+      setTestEmailStatus({ loading: false, result: 'error' });
+      setTestEmailError(err.message || '网络错误');
+      setTimeout(() => setTestEmailStatus({ loading: false, result: null }), 8000);
+    }
   };
 
   return (
@@ -548,6 +593,115 @@ const SettingsModal = ({
                           }`}
                         >
                           <Check size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 邮件提醒配置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <AlertCircle size={14} />
+                    <span>邮件提醒配置</span>
+                  </div>
+                  <div className="bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase">提醒邮箱地址</label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="email"
+                          value={localEmailAddress}
+                          onChange={(e) => setLocalEmailAddress(e.target.value)}
+                          placeholder="例如: yourname@example.com"
+                          className="flex-1 px-4 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button 
+                          onClick={handleSaveEmail}
+                          disabled={localEmailAddress === emailAddress}
+                          className={`p-2 rounded-xl transition-all shadow-sm ${
+                            localEmailAddress === emailAddress
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          }`}
+                        >
+                          <Check size={16} />
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex justify-end">
+                          <button 
+                            onClick={handleTestEmail}
+                            disabled={testEmailStatus.loading}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-700 font-bold flex items-center gap-1.5 px-2 py-1 bg-indigo-50 rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            {testEmailStatus.loading ? (
+                              <Loader2 size={10} className="animate-spin" />
+                            ) : (
+                              <Play size={10} fill="currentColor" />
+                            )}
+                            发送测试邮件
+                          </button>
+                        </div>
+                        
+                        <AnimatePresence>
+                          {testEmailStatus.result && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0, y: -5 }}
+                              animate={{ opacity: 1, height: 'auto', y: 0 }}
+                              exit={{ opacity: 0, height: 0, y: -5 }}
+                              className={`flex items-start gap-2 p-2.5 rounded-xl border text-[10px] font-medium ${
+                                testEmailStatus.result === 'success' 
+                                  ? 'bg-green-50 border-green-100 text-green-700' 
+                                  : 'bg-red-50 border-red-100 text-red-600'
+                              }`}
+                            >
+                              {testEmailStatus.result === 'success' ? (
+                                <Check size={12} className="mt-0.5 shrink-0" />
+                              ) : (
+                                <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                              )}
+                              <div className="leading-normal">
+                                {testEmailStatus.result === 'success' 
+                                  ? '测试邮件已发送！请检查您的收件箱（包括垃圾箱）。' 
+                                  : testEmailError}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+            </div>
+
+            <div className="space-y-3 border-t border-indigo-100/50 pt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-[11px] font-bold text-gray-700 block">每日未完成提醒</span>
+                          <p className="text-[9px] text-gray-400">每天 20:00 检查，若未同步则发送邮件</p>
+                        </div>
+                        <button 
+                          onClick={() => updateDailyEmailEnabled(!dailyEmailEnabled)}
+                          className={`w-10 h-5 rounded-full relative transition-colors ${dailyEmailEnabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                        >
+                          <motion.div 
+                            animate={{ x: dailyEmailEnabled ? 22 : 2 }}
+                            className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                          />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-[11px] font-bold text-gray-700 block">每周未完成提醒</span>
+                          <p className="text-[9px] text-gray-400">每周五 21:00 检查本周缺失，若有则发送邮件</p>
+                        </div>
+                        <button 
+                          onClick={() => updateWeeklyEmailEnabled(!weeklyEmailEnabled)}
+                          className={`w-10 h-5 rounded-full relative transition-colors ${weeklyEmailEnabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                        >
+                          <motion.div 
+                            animate={{ x: weeklyEmailEnabled ? 22 : 2 }}
+                            className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                          />
                         </button>
                       </div>
                     </div>

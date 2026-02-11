@@ -60,6 +60,9 @@ function App() {
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
+  const [emailAddress, setEmailAddress] = useState('');
+  const [dailyEmailEnabled, setDailyEmailEnabled] = useState(false);
+  const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
   const [titleTemplate, setTitleTemplate] = useState('');
   const [countdown, setCountdown] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
@@ -172,12 +175,15 @@ function App() {
       
       syncTitle = titleTemplate
         .replace(/{date}/g, formattedDate)
+        .replace(/{date-hyphen}/g, formattedDateHyphen)
+        .replace(/{date-cn}/g, formattedDateCN)
         .replace(/{author}/g, selectedAuthor || defaultUser || 'Unknown')
         .replace(/{repo}/g, repoPaths.length > 0 ? (repoPaths[0].split(/[/\\]/).pop() || 'MultiRepos') : 'MultiRepos');
       
-      syncTitle = syncTitle.replace(/\d{4}-\d{2}-\d{2}/g, formattedDateHyphen);
+      // 自动替换模板中可能存在的旧日期格式
+      syncTitle = syncTitle.replace(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/g, formattedDateHyphen);
       syncTitle = syncTitle.replace(/\d{4}年\d{1,2}月\d{1,2}日/g, formattedDateCN);
-      syncTitle = syncTitle.replace(/20260102/g, formattedDate);
+      syncTitle = syncTitle.replace(/\d{8}/g, formattedDate);
     }
 
     try {
@@ -789,6 +795,12 @@ function App() {
       
       setScheduleEnabled(res.SCHEDULE_ENABLED === 'true' || res.SCHEDULE_ENABLED === true);
       setScheduleTime(res.SCHEDULE_TIME || '18:00');
+      
+      // 加载邮件配置
+      setEmailAddress(res.EMAIL_ADDRESS || '');
+      setDailyEmailEnabled(res.DAILY_EMAIL_ENABLED === 'true' || res.DAILY_EMAIL_ENABLED === true);
+      setWeeklyEmailEnabled(res.WEEKLY_EMAIL_ENABLED === 'true' || res.WEEKLY_EMAIL_ENABLED === true);
+
       setTitleTemplate(res.TITLE_TEMPLATE || '');
       
       // 加载补充内容
@@ -867,6 +879,9 @@ function App() {
       if (key === 'FAILURE_SOUND') setFailureSound(value);
       if (key === 'SCHEDULE_ENABLED') setScheduleEnabled(value === 'true' || value === true);
       if (key === 'SCHEDULE_TIME') setScheduleTime(value);
+      if (key === 'EMAIL_ADDRESS') setEmailAddress(value);
+      if (key === 'DAILY_EMAIL_ENABLED') setDailyEmailEnabled(value === 'true' || value === true);
+      if (key === 'WEEKLY_EMAIL_ENABLED') setWeeklyEmailEnabled(value === 'true' || value === true);
       if (key === 'TITLE_TEMPLATE') setTitleTemplate(value);
     } catch (err) {
       console.error(`更新配置 ${key} 失败`, err);
@@ -1172,7 +1187,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.4.4</span>
+                  <span>Version 2.5.0</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
@@ -1512,6 +1527,12 @@ function App() {
               updateAutoLaunchEnabled={updateAutoLaunchEnabled}
               xuexitongLogUrl={xuexitongLogUrl}
               updateXuexitongLogUrl={(val) => updateConfig('XUEXITONG_LOG_CHECK_URL', val)}
+              emailAddress={emailAddress}
+              updateEmailAddress={(val) => updateConfig('EMAIL_ADDRESS', val)}
+              dailyEmailEnabled={dailyEmailEnabled}
+              updateDailyEmailEnabled={(val) => updateConfig('DAILY_EMAIL_ENABLED', val)}
+              weeklyEmailEnabled={weeklyEmailEnabled}
+              updateWeeklyEmailEnabled={(val) => updateConfig('WEEKLY_EMAIL_ENABLED', val)}
             />
           )}
 

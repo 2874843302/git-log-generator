@@ -33,6 +33,9 @@ const api = {
   showNotification: (data) => window.electron.invoke('api:showNotification', data),
   listSounds: () => window.electron.invoke('api:listSounds'),
 
+  // 邮件相关
+  sendTestEmail: (email) => window.electron.invoke('api:sendTestEmail', email),
+
   // 开机自启相关
   getAutoLaunch: () => window.electron.invoke('api:getAutoLaunch'),
   setAutoLaunch: (enable) => window.electron.invoke('api:setAutoLaunch', enable),

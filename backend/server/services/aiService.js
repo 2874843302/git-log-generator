@@ -7,7 +7,22 @@ async function generateAILog(params) {
     const { logs, templateKey, customPrompt, tomorrowPlanPrompt, referenceLog, options, repoPaths } = params;
     // 优先使用传入的 apiKey，否则从环境变量获取
     const apiKey = params.apiKey || process.env.DEEPSEEK_API_KEY;
-    const titleTemplate = params.titleTemplate || process.env.TITLE_TEMPLATE;
+    let titleTemplate = params.titleTemplate || process.env.TITLE_TEMPLATE;
+
+    // 处理标题日期：如果包含日期占位符，取提交记录中的日期
+    if (titleTemplate && (titleTemplate.includes('YYYY') || titleTemplate.includes('MM') || titleTemplate.includes('DD'))) {
+        const targetDate = params.targetDate || (logs && logs.length > 0 ? logs[0].date.split(' ')[0] : new Date().toISOString().split('T')[0]);
+        const dateObj = new Date(targetDate);
+        if (!isNaN(dateObj.getTime())) {
+            const yyyy = dateObj.getFullYear();
+            const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const dd = String(dateObj.getDate()).padStart(2, '0');
+            titleTemplate = titleTemplate
+                .replace(/YYYY/g, yyyy)
+                .replace(/MM/g, mm)
+                .replace(/DD/g, dd);
+        }
+    }
 
     if (!apiKey) {
         throw new Error('未检测到 DeepSeek API Key，请在设置中配置后再试');
@@ -103,6 +118,7 @@ ${conciseSuffix}列表从 1. 开始计数。`;
 3. **内容润色与深度**：
    - **核心任务**：不仅要汇总提交信息，更要${options?.includeDiffContent ? '**深度解析提供的代码差分 (diffContent)**' : '结合文件变更统计 (diffStat)'}。
    - **描述原则**：只描述当前逻辑的具体作用、执行流程、技术细节，严禁使用空洞的套话。
+   - **禁止量化描述**：严禁出现“修改了 X 行代码”、“删除了 Y 行”等字眼，应转化为对逻辑变动意图的专业描述。
 4. **格式要求**：
    - 使用 ### 作为板块标题。
    - 父级使用有序列表（1. 2. 3.），子级使用无序列表（ - ）并保持 4 个空格缩进。`;
@@ -126,7 +142,10 @@ ${conciseSuffix}列表从 1. 开始计数。`;
 **核心约束（强制执行）**：
 1. **标题规范**：严禁使用“明日计划”或“补充内容”作为固定标题。必须根据内容动态总结 ### [专业标题]。
 2. **无素材不标题**：如果没有 Git 提交记录，严禁出现“今日工作”等标题；如果没有遇到问题，严禁出现“遇到问题”等标题。
-3. **内容润色**：对于用户提供的素材，禁止生硬罗列。你必须进行二次创作，将其描述为一套连贯的学习或开发流程（如：研究方案 -> 实践编码 -> 总结验证）。
+3. **内容润色与描述规范**：
+   - 对于用户提供的素材，禁止生硬罗列。你必须进行二次创作，将其描述为一套连贯的学习或开发流程（如：研究方案 -> 实践编码 -> 总结验证）。
+   - **禁止出现量化描述**：严禁在日志中提及“修改了几行代码”、“删除了几行”、“新增了多少行”等具体行数描述。
+   - **深度技术表达**：应侧重于描述逻辑变更的意图、重构的影响、解决的具体 Bug 场景或新增功能的技术栈实现。
 4. **直接输出**：直接输出报告的 Markdown 内容，不要包含任何开场白或总结。
 5. **消除冗余**：严禁出现“基于 Git 记录”、“根据提交信息”等说明性文字。` 
                     },

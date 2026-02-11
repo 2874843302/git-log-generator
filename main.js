@@ -102,6 +102,10 @@ app.whenReady().then(() => {
     const { registerIpcHandlers } = require('./backend/ipcHandlers');
     registerIpcHandlers();
     
+    // 初始化定时任务
+    const scheduler = require('./backend/scheduler');
+    scheduler.initCronJobs();
+    
     createWindow();
 
     // 初始化更新程序

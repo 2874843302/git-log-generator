@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
 const { marked } = require('marked');
+const nodemailer = require('nodemailer');
 
 // 配置 marked
 marked.setOptions({
@@ -15,6 +16,7 @@ const aiService = require('./server/services/aiService');
 const scheduler = require('./scheduler');
 const { templates } = require('./server/constants/templates');
 const { getSetting, setSetting, getAllSettings } = require('./database');
+const emailConfig = require('./emailConfig');
 
 /**
  * 迁移 .env 文件到 SQLite (仅在 SQLite 中没有对应键时迁移)
@@ -418,7 +420,10 @@ function registerIpcHandlers() {
       FAILURE_SOUND: '啊咧？.mp3',
       SCHEDULE_ENABLED: 'false',
       SCHEDULE_TIME: '18:00',
-      TITLE_TEMPLATE: ''
+      TITLE_TEMPLATE: '',
+      EMAIL_ADDRESS: '',
+      DAILY_EMAIL_ENABLED: 'false',
+      WEEKLY_EMAIL_ENABLED: 'false'
     };
 
     try {
@@ -724,59 +729,92 @@ function registerIpcHandlers() {
       // 2. 如果没找到且不在笔记页，直接跳转（最快方式）
       if (!foundNewBtn && !page.url().includes('jumpToAddNote')) {
         console.log('正在执行极速跳转...');
-        await page.goto('https://noteyd.chaoxing.com/pc/note_notebook/jumpToAddNote', { waitUntil: 'domcontentloaded' });
-        foundNewBtn = true;
-        notePage = page;
+        const currentUrl = page.url();
+        const domain = currentUrl.includes('noteyd.chaoxing.com') ? 'noteyd.chaoxing.com' : 'note.chaoxing.com';
+        const jumpUrl = `https://${domain}/pc/note_notebook/jumpToAddNote`;
+        
+        try {
+          await page.goto(jumpUrl, { waitUntil: 'load', timeout: 20000 });
+          // 跳转后检查是否真的到了编辑页
+          await page.waitForTimeout(1000);
+          if (page.url().includes('jumpToAddNote')) {
+            foundNewBtn = true;
+            notePage = page;
+          } else {
+            console.log('跳转被重定向，尝试在当前页面寻找“写笔记”按钮...');
+            foundNewBtn = await fastClick(page);
+          }
+        } catch (gotoError) {
+          if (gotoError.message.includes('net::ERR_ABORTED')) {
+            console.warn('导航被中止 (ERR_ABORTED)，尝试在当前页面寻找“写笔记”按钮...');
+            foundNewBtn = await fastClick(page);
+          } else {
+            throw gotoError;
+          }
+        }
       }
 
-      // 6. 切换笔记本逻辑 (新增)
-      console.log('正在检查笔记本分类...');
-      try {
-        // 优化：移除不稳定的 networkidle 等待，直接等待关键元素
-        await notePage.waitForLoadState('domcontentloaded');
-        
-        // 检查当前选中的笔记本名称
-        const currentFolderSelector = '.nowFolder .foldername';
-        const currentFolderEl = await notePage.waitForSelector(currentFolderSelector, { timeout: 8000 });
-        const currentFolderName = await currentFolderEl?.innerText();
-        
-        console.log(`当前笔记本分类: ${currentFolderName}`);
-        
-        if (currentFolderName && !currentFolderName.includes('工作日志')) {
-          console.log('检测到当前不是“工作日志”，正在尝试切换...');
-          
-          // 1. 点击切换按钮 (整个 .nowFolder 区域)
-          await notePage.click('.nowFolder');
-          
-          // 2. 处理弹出的 iframe
-          const iframeSelector = 'iframe#selectNoteFolder';
-          const iframeElement = await notePage.waitForSelector(iframeSelector, { timeout: 5000 });
-          const iframe = await iframeElement.contentFrame();
-          
-          if (iframe) {
-            console.log('正在从选择框中查找“工作日志”...');
-            // 在 iframe 中查找包含“工作日志”文字的 .notebook_item
-            // 优先查找最近列表中的工作日志
-            const targetFolderSelector = '.notebook_item:has-text("工作日志")';
-            await iframe.waitForSelector(targetFolderSelector, { timeout: 5000 });
-            await iframe.click(targetFolderSelector);
-            
-            console.log('已点击“工作日志”，等待页面更新...');
-            // 等待弹窗消失或页面刷新
-            await notePage.waitForTimeout(1000);
-          } else {
-            console.warn('未找到选择笔记本的 iframe，尝试继续同步...');
-          }
-        } else {
-          console.log('确认当前已是“工作日志”或无法识别分类，继续同步...');
+      // 如果最终还是没找到按钮也没进入编辑页，抛出明确错误
+      if (!foundNewBtn && !notePage.url().includes('jumpToAddNote')) {
+        console.log('正在尝试最后一次尝试：直接点击页面上的写笔记文本...');
+        try {
+          await page.click('text=写笔记', { timeout: 3000 });
+          const [newPage] = await Promise.all([
+            browserContext.waitForEvent('page', { timeout: 5000 }).catch(() => null),
+            page.waitForTimeout(500)
+          ]);
+          if (newPage) notePage = newPage;
+          foundNewBtn = true;
+        } catch (e) {
+          throw new Error('未能进入“写笔记”页面，请手动点击学习通页面上的“写笔记”按钮后再试');
         }
-      } catch (folderError) {
-        console.warn('检查/切换笔记本失败:', folderError.message, '尝试继续同步...');
+      }
+
+      // 6. 切换笔记本逻辑 (针对编辑页)
+      if (notePage.url().includes('jumpToAddNote') || notePage.url().includes('addNote')) {
+        console.log('正在检查编辑页笔记本分类...');
+        try {
+          // 优化：不再强制等待 domcontentloaded，直接等待关键元素
+          await notePage.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
+          
+          // 检查当前选中的笔记本名称
+          const currentFolderSelector = '.nowFolder .foldername';
+          const currentFolderEl = await notePage.waitForSelector(currentFolderSelector, { timeout: 8000 });
+          const currentFolderName = await currentFolderEl?.innerText();
+          
+          console.log(`当前笔记本分类: ${currentFolderName}`);
+          
+          if (currentFolderName && !currentFolderName.includes('工作日志')) {
+            console.log('检测到当前不是“工作日志”，正在尝试切换...');
+            
+            // 1. 点击切换按钮 (整个 .nowFolder 区域)
+            await notePage.click('.nowFolder');
+            
+            // 2. 处理弹出的 iframe
+            const iframeSelector = 'iframe#selectNoteFolder';
+            const iframeElement = await notePage.waitForSelector(iframeSelector, { timeout: 5000 });
+            const iframe = await iframeElement.contentFrame();
+            
+            if (iframe) {
+              console.log('正在从选择框中查找“工作日志”...');
+              const targetFolderSelector = '.notebook_item:has-text("工作日志")';
+              await iframe.waitForSelector(targetFolderSelector, { timeout: 5000 });
+              await iframe.click(targetFolderSelector);
+              
+              console.log('已点击“工作日志”，等待页面更新...');
+              await notePage.waitForTimeout(1000);
+            }
+          }
+        } catch (folderError) {
+          console.warn('检查/切换笔记本失败:', folderError.message, '尝试继续同步...');
+        }
+      } else {
+        console.warn('当前不在编辑页，跳过笔记本切换检查');
       }
 
       // 6. 填充标题和内容 - 优化：直接通过 JS 注入，并增加备选方案
       console.log('正在注入笔记内容...');
-      await notePage.waitForLoadState('domcontentloaded');
+      await notePage.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
       
       // 等待编辑器主体加载，作为页面就绪的信号
       try {
@@ -921,6 +959,40 @@ function registerIpcHandlers() {
     } catch (error) {
       console.error('设置开机自启失败:', error);
       return false;
+    }
+  });
+
+  // 发送测试邮件
+  ipcMain.handle('api:sendTestEmail', async (event, email) => {
+    try {
+      const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_NAME } = emailConfig;
+
+      if (!SMTP_USER || !SMTP_PASS || SMTP_PASS === 'your_auth_code_here') {
+        return { success: false, error: '请先在 backend/emailConfig.js 中配置正确的 SMTP 账号和授权码' };
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: parseInt(SMTP_PORT),
+        secure: parseInt(SMTP_PORT) === 465,
+        auth: {
+          user: SMTP_USER,
+          pass: SMTP_PASS
+        }
+      });
+
+      await transporter.sendMail({
+        from: `"${FROM_NAME}" <${SMTP_USER}>`,
+        to: email,
+        subject: 'Git Log Generator - 测试邮件',
+        text: '这是一封来自 Git Log Generator 的测试邮件，证明您的邮件配置已生效。',
+        html: '<p>这是一封来自 <b>Git Log Generator</b> 的测试邮件，证明您的邮件配置已生效。</p>'
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('发送测试邮件失败:', error);
+      return { success: false, error: error.message };
     }
   });
 }
