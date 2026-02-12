@@ -163,7 +163,7 @@ class SchedulerService {
         const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_NAME } = emailConfig;
 
         if (!SMTP_USER || !SMTP_PASS || SMTP_PASS === 'your_auth_code_here') {
-            console.warn('[Scheduler] 未配置或配置了错误的 SMTP 发件信息，无法发送提醒邮件。请检查 backend/emailConfig.js');
+            console.warn('[Scheduler] 未配置或配置了错误的 SMTP 发件信息，无法发送提醒邮件。请检查系统设置中的邮件服务器配置');
             return;
         }
 

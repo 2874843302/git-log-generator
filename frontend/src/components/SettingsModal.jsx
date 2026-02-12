@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar, Type } from 'lucide-react';
+import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar, Type, Mail } from 'lucide-react';
 
 const SettingsModal = ({ 
   isOpen, 
@@ -42,7 +42,17 @@ const SettingsModal = ({
   loading,
   originPos,
   autoLaunchEnabled,
-  updateAutoLaunchEnabled
+  updateAutoLaunchEnabled,
+  smtpHost,
+  updateSmtpHost,
+  smtpPort,
+  updateSmtpPort,
+  smtpUser,
+  updateSmtpUser,
+  smtpPass,
+  updateSmtpPass,
+  fromName,
+  updateFromName
 }) => {
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localDefaultUser, setLocalDefaultUser] = useState(defaultUser);
@@ -53,6 +63,12 @@ const SettingsModal = ({
   const [localScheduleTime, setLocalScheduleTime] = useState(scheduleTime);
   const [localTitleTemplate, setLocalTitleTemplate] = useState(titleTemplate);
   const [localEmailAddress, setLocalEmailAddress] = useState(emailAddress || '');
+  const [localSmtpHost, setLocalSmtpHost] = useState(smtpHost || '');
+  const [localSmtpPort, setLocalSmtpPort] = useState(smtpPort || 465);
+  const [localSmtpUser, setLocalSmtpUser] = useState(smtpUser || '');
+  const [localSmtpPass, setLocalSmtpPass] = useState(smtpPass || '');
+  const [localFromName, setLocalFromName] = useState(fromName || '');
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
   const [detectedBrowsers, setDetectedBrowsers] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -120,6 +136,26 @@ const SettingsModal = ({
     setLocalEmailAddress(emailAddress || '');
   }, [emailAddress]);
 
+  useEffect(() => {
+    setLocalSmtpHost(smtpHost || '');
+  }, [smtpHost]);
+
+  useEffect(() => {
+    setLocalSmtpPort(smtpPort || 465);
+  }, [smtpPort]);
+
+  useEffect(() => {
+    setLocalSmtpUser(smtpUser || '');
+  }, [smtpUser]);
+
+  useEffect(() => {
+    setLocalSmtpPass(smtpPass || '');
+  }, [smtpPass]);
+
+  useEffect(() => {
+    setLocalFromName(fromName || '');
+  }, [fromName]);
+
   const handleDetectBrowsers = async () => {
     try {
       setIsDetecting(true);
@@ -169,6 +205,14 @@ const SettingsModal = ({
 
   const handleSaveEmail = () => {
     updateEmailAddress(localEmailAddress);
+  };
+
+  const handleSaveSmtp = () => {
+    updateSmtpHost(localSmtpHost);
+    updateSmtpPort(localSmtpPort);
+    updateSmtpUser(localSmtpUser);
+    updateSmtpPass(localSmtpPass);
+    updateFromName(localFromName);
   };
 
   const handleTestEmail = async () => {
@@ -247,6 +291,7 @@ const SettingsModal = ({
           {[
             { id: 'general', label: '基础配置', icon: Settings },
             { id: 'automation', label: '同步任务', icon: Share2 },
+            { id: 'email', label: '邮件服务器', icon: Mail },
             { id: 'system', label: '系统交互', icon: ShieldCheck },
           ].map((tab) => (
             <button
@@ -705,6 +750,109 @@ const SettingsModal = ({
                         </button>
                       </div>
                     </div>
+                  </div>
+                </section>
+              </motion.div>
+            )}
+
+            {activeTab === 'email' && (
+              <motion.div
+                key="email"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                {/* 6. SMTP 服务器配置 */}
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <Mail size={14} />
+                    <span>SMTP 发件服务器配置</span>
+                  </div>
+                  <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-indigo-600 uppercase">SMTP 服务器</label>
+                        <input 
+                          type="text"
+                          value={localSmtpHost}
+                          onChange={(e) => setLocalSmtpHost(e.target.value)}
+                          placeholder="smtp.qq.com"
+                          className="w-full px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-indigo-600 uppercase">端口</label>
+                        <input 
+                          type="number"
+                          value={localSmtpPort}
+                          onChange={(e) => setLocalSmtpPort(parseInt(e.target.value))}
+                          placeholder="465"
+                          className="w-full px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase">发件人名称</label>
+                      <input 
+                        type="text"
+                        value={localFromName}
+                        onChange={(e) => setLocalFromName(e.target.value)}
+                        placeholder="Git Log Generator"
+                        className="w-full px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase">发件邮箱账号</label>
+                      <input 
+                        type="email"
+                        value={localSmtpUser}
+                        onChange={(e) => setLocalSmtpUser(e.target.value)}
+                        placeholder="your-email@qq.com"
+                        className="w-full px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase">授权码 / 密码</label>
+                      <div className="relative">
+                        <input 
+                          type={showSmtpPass ? "text" : "password"}
+                          value={localSmtpPass}
+                          onChange={(e) => setLocalSmtpPass(e.target.value)}
+                          placeholder="请输入 SMTP 授权码"
+                          className="w-full px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs pr-10 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button 
+                          onClick={() => setShowSmtpPass(!showSmtpPass)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600"
+                        >
+                          {showSmtpPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={handleSaveSmtp}
+                      disabled={
+                        localSmtpHost === smtpHost && 
+                        localSmtpPort === smtpPort && 
+                        localSmtpUser === smtpUser && 
+                        localSmtpPass === smtpPass && 
+                        localFromName === fromName
+                      }
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                        (localSmtpHost === smtpHost && localSmtpPort === smtpPort && localSmtpUser === smtpUser && localSmtpPass === smtpPass && localFromName === fromName)
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
+                      }`}
+                    >
+                      <Check size={16} />
+                      保存服务器配置
+                    </button>
                   </div>
                 </section>
               </motion.div>

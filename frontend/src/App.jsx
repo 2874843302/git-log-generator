@@ -61,6 +61,11 @@ function App() {
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [emailAddress, setEmailAddress] = useState('');
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState(465);
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [fromName, setFromName] = useState('');
   const [repoAliases, setRepoAliases] = useState({});
   const [dailyEmailEnabled, setDailyEmailEnabled] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
@@ -799,6 +804,11 @@ function App() {
       
       // 加载邮件配置
       setEmailAddress(res.EMAIL_ADDRESS || '');
+      setSmtpHost(res.SMTP_HOST || '');
+      setSmtpPort(res.SMTP_PORT || 465);
+      setSmtpUser(res.SMTP_USER || '');
+      setSmtpPass(res.SMTP_PASS || '');
+      setFromName(res.FROM_NAME || '');
       setDailyEmailEnabled(res.DAILY_EMAIL_ENABLED === 'true' || res.DAILY_EMAIL_ENABLED === true);
       setWeeklyEmailEnabled(res.WEEKLY_EMAIL_ENABLED === 'true' || res.WEEKLY_EMAIL_ENABLED === true);
       setRepoAliases(res.REPO_ALIASES || {});
@@ -1524,9 +1534,8 @@ function App() {
                 scheduleTime={scheduleTime}
                 updateScheduleTime={(val) => updateConfig('SCHEDULE_TIME', val)}
                 titleTemplate={titleTemplate}
-                updateTitleTemplate={(val) => updateConfig('TITLE_TEMPLATE', val)}
-                initEnv={initEnv}
-                loading={loading}
+              updateTitleTemplate={(val) => updateConfig('TITLE_TEMPLATE', val)}
+              loading={loading}
               originPos={settingsModalPos}
               autoLaunchEnabled={autoLaunchEnabled}
               updateAutoLaunchEnabled={updateAutoLaunchEnabled}
@@ -1538,6 +1547,17 @@ function App() {
               updateDailyEmailEnabled={(val) => updateConfig('DAILY_EMAIL_ENABLED', val)}
               weeklyEmailEnabled={weeklyEmailEnabled}
               updateWeeklyEmailEnabled={(val) => updateConfig('WEEKLY_EMAIL_ENABLED', val)}
+              smtpHost={smtpHost}
+              updateSmtpHost={(val) => updateConfig('SMTP_HOST', val)}
+              smtpPort={smtpPort}
+              updateSmtpPort={(val) => updateConfig('SMTP_PORT', val)}
+              smtpUser={smtpUser}
+              updateSmtpUser={(val) => updateConfig('SMTP_USER', val)}
+              smtpPass={smtpPass}
+              updateSmtpPass={(val) => updateConfig('SMTP_PASS', val)}
+              fromName={fromName}
+              updateFromName={(val) => updateConfig('FROM_NAME', val)}
+              initEnv={initEnv}
             />
           )}
 

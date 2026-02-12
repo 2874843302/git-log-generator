@@ -1037,7 +1037,7 @@ function registerIpcHandlers() {
       const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_NAME } = emailConfig;
 
       if (!SMTP_USER || !SMTP_PASS || SMTP_PASS === 'your_auth_code_here') {
-        return { success: false, error: '请先在 backend/emailConfig.js 中配置正确的 SMTP 账号和授权码' };
+        return { success: false, error: '请先在系统设置中配置正确的 SMTP 账号和授权码' };
       }
 
       const transporter = nodemailer.createTransport({
