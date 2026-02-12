@@ -61,6 +61,7 @@ function App() {
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [emailAddress, setEmailAddress] = useState('');
+  const [repoAliases, setRepoAliases] = useState({});
   const [dailyEmailEnabled, setDailyEmailEnabled] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
   const [titleTemplate, setTitleTemplate] = useState('');
@@ -800,6 +801,7 @@ function App() {
       setEmailAddress(res.EMAIL_ADDRESS || '');
       setDailyEmailEnabled(res.DAILY_EMAIL_ENABLED === 'true' || res.DAILY_EMAIL_ENABLED === true);
       setWeeklyEmailEnabled(res.WEEKLY_EMAIL_ENABLED === 'true' || res.WEEKLY_EMAIL_ENABLED === true);
+      setRepoAliases(res.REPO_ALIASES || {});
 
       setTitleTemplate(res.TITLE_TEMPLATE || '');
       
@@ -883,6 +885,7 @@ function App() {
       if (key === 'DAILY_EMAIL_ENABLED') setDailyEmailEnabled(value === 'true' || value === true);
       if (key === 'WEEKLY_EMAIL_ENABLED') setWeeklyEmailEnabled(value === 'true' || value === true);
       if (key === 'TITLE_TEMPLATE') setTitleTemplate(value);
+      if (key === 'REPO_ALIASES') setRepoAliases(value);
     } catch (err) {
       console.error(`更新配置 ${key} 失败`, err);
     }
@@ -1155,6 +1158,8 @@ function App() {
             failureSound={failureSound}
             xuexitongLogUrl={xuexitongLogUrl}
             updateXuexitongLogUrl={(val) => updateConfig('XUEXITONG_LOG_CHECK_URL', val)}
+            repoAliases={repoAliases}
+            updateRepoAliases={(val) => updateConfig('REPO_ALIASES', val)}
           />
 
           <LogGenerator 
@@ -1187,7 +1192,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.5.0</span>
+                  <span>Version 2.5.1</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
@@ -1543,6 +1548,7 @@ function App() {
               onGenerate={handleFoolModeGenerate}
               onReposChange={setFoolModeRepos}
               originPos={foolModePos}
+              repoAliases={repoAliases}
             />
           )}
         </AnimatePresence>

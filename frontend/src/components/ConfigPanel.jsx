@@ -29,10 +29,14 @@ const ConfigPanel = ({
   openFoolMode,
   apiKey,
   baseDir,
-  defaultUser
+  defaultUser,
+  repoAliases = {},
+  updateRepoAliases
 }) => {
 
   const [authorDropdownOpen, setAuthorDropdownOpen] = useState(false);
+  const [editingAliasPath, setEditingAliasPath] = useState(null);
+  const [aliasInputValue, setAliasInputValue] = useState('');
   const authorDropdownRef = useRef(null);
 
   // 检查是否已完成关键全局配置 (API Key, 基础目录)
@@ -50,6 +54,27 @@ const ConfigPanel = ({
 
   const getSelectedBranchesCount = () => {
     return Object.values(selectedBranches).reduce((acc, curr) => acc + curr.length, 0);
+  };
+
+  // 处理别名保存
+  const handleSaveAlias = (path) => {
+    const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+    const newAliases = { ...repoAliases };
+    if (aliasInputValue.trim()) {
+      newAliases[repoName] = aliasInputValue.trim();
+    } else {
+      delete newAliases[repoName];
+    }
+    updateRepoAliases(newAliases);
+    setEditingAliasPath(null);
+    setAliasInputValue('');
+  };
+
+  // 开启编辑别名
+  const startEditingAlias = (path) => {
+    const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+    setEditingAliasPath(path);
+    setAliasInputValue(repoAliases[repoName] || '');
   };
 
   return (
@@ -219,22 +244,78 @@ const ConfigPanel = ({
               <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-md">{repoPaths.length} 个</span>
             </div>
             <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-              {repoPaths.map((path, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200 group hover:border-blue-200 transition-all shadow-sm">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
-                    <span className="text-[11px] text-gray-700 truncate font-medium">
-                      {path.replace(/[\\/]$/, '').split(/[\\/]/).pop()}
-                    </span>
+              {repoPaths.map((path, idx) => {
+                const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+                const alias = repoAliases[repoName];
+                const isEditing = editingAliasPath === path;
+
+                return (
+                  <div key={idx} className="group flex flex-col p-2 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-all shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[11px] text-gray-700 truncate font-medium">
+                            {repoName}
+                          </span>
+                          {alias && !isEditing && (
+                            <span className="text-[9px] text-blue-500 font-bold truncate">
+                              别名: {alias}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => isEditing ? handleSaveAlias(path) : startEditingAlias(path)}
+                          className={`p-1 rounded transition-all ${isEditing ? 'text-green-500 hover:bg-green-50' : 'text-gray-300 hover:text-blue-500 hover:bg-blue-50'}`}
+                          title={isEditing ? "保存别名" : "设置中文别名"}
+                        >
+                          {isEditing ? <Check size={12} /> : <Settings size={12} />}
+                        </button>
+                        <button 
+                          onClick={() => removeFolder(path)}
+                          className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <AnimatePresence>
+                      {isEditing && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-2 flex gap-1.5">
+                            <input 
+                              autoFocus
+                              type="text"
+                              value={aliasInputValue}
+                              onChange={(e) => setAliasInputValue(e.target.value)}
+                              placeholder="输入中文项目名..."
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveAlias(path);
+                                if (e.key === 'Escape') setEditingAliasPath(null);
+                              }}
+                              className="flex-1 px-2 py-1 border border-blue-100 rounded bg-blue-50/30 text-[10px] outline-none focus:border-blue-300 transition-all"
+                            />
+                            <button 
+                              onClick={() => setEditingAliasPath(null)}
+                              className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600 font-bold"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                  <button 
-                    onClick={() => removeFolder(path)}
-                    className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-all"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
               <button 
                 onClick={selectFolder}
                 className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30 transition-all text-[11px] font-bold"

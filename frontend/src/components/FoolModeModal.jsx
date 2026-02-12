@@ -4,7 +4,7 @@ import { X, Zap, Check, Loader2, AlertCircle, Github, Search, Calendar } from 'l
 import api from '../services/api';
 import dayjs from 'dayjs';
 
-const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos }) => {
+const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, repoAliases = {} }) => {
   const [repos, setRepos] = useState([]);
   const [selectedRepos, setSelectedRepos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -213,37 +213,47 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos }
 
               {/* 仓库列表网格 */}
               <div className="max-h-60 overflow-y-auto custom-scrollbar px-2 py-2 -mx-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredRepos.map((repo) => (
-                  <motion.div
-                    key={repo.path}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => toggleRepo(repo.path)}
-                    className={`cursor-pointer p-4 rounded-2xl border-2 transition-all flex items-center justify-between group ${
-                      selectedRepos.includes(repo.path)
-                        ? 'bg-blue-50 border-blue-500 shadow-lg shadow-blue-500/10'
-                        : 'bg-white border-gray-100 hover:border-blue-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`p-2 rounded-xl transition-colors ${
-                        selectedRepos.includes(repo.path) ? 'bg-blue-500 text-white' : 'bg-gray-50 text-gray-400 group-hover:bg-blue-100 group-hover:text-blue-500'
-                      }`}>
-                        <Github size={16} />
+                {filteredRepos.map((repo) => {
+                  const alias = repoAliases[repo.name];
+                  return (
+                    <motion.div
+                      key={repo.path}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => toggleRepo(repo.path)}
+                      className={`cursor-pointer p-4 rounded-2xl border-2 transition-all flex items-center justify-between group ${
+                        selectedRepos.includes(repo.path)
+                          ? 'bg-blue-50 border-blue-500 shadow-lg shadow-blue-500/10'
+                          : 'bg-white border-gray-100 hover:border-blue-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`p-2 rounded-xl transition-colors ${
+                          selectedRepos.includes(repo.path) ? 'bg-blue-500 text-white' : 'bg-gray-50 text-gray-400 group-hover:bg-blue-100 group-hover:text-blue-500'
+                        }`}>
+                          <Github size={16} />
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-xs font-bold truncate ${
+                            selectedRepos.includes(repo.path) ? 'text-blue-900' : 'text-gray-600'
+                          }`}>
+                            {repo.name}
+                          </span>
+                          {alias && (
+                            <span className="text-[10px] text-blue-500 font-bold truncate">
+                              {alias}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <span className={`text-xs font-bold truncate ${
-                        selectedRepos.includes(repo.path) ? 'text-blue-900' : 'text-gray-600'
-                      }`}>
-                        {repo.name}
-                      </span>
-                    </div>
-                    {selectedRepos.includes(repo.path) && (
-                      <div className="bg-blue-500 text-white rounded-full p-0.5">
-                        <Check size={12} strokeWidth={4} />
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
+                      {selectedRepos.includes(repo.path) && (
+                        <div className="bg-blue-500 text-white rounded-full p-0.5">
+                          <Check size={12} strokeWidth={4} />
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
               </div>
 
               {/* 附加选项 */}

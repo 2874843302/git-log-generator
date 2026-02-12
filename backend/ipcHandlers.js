@@ -143,29 +143,60 @@ function registerIpcHandlers() {
       console.log(`[Backend] Target URL: ${targetUrl}`);
       console.log(`[Backend] Target dates to check: ${targetDateStrings.join(', ')}`);
 
-      if (!browserContext) {
-        console.log('[Backend] Launching new browser instance...');
-        const launchOptions = {
-          headless: headless,
-          executablePath: customBrowserPath || undefined,
-          args: ['--no-sandbox', '--disable-setuid-sandbox']
-        };
+      // 检查浏览器是否需要重启（路径变化、无头模式变化或已断开连接）
+      const isConnected = browserContext && (browserInstance ? browserInstance.isConnected() : browserContext.browser()?.isConnected());
+      const isPathChanged = lastUsedBrowserPath !== customBrowserPath;
+      const isHeadlessChanged = lastUsedHeadless !== headless;
 
+      if (!browserContext || !isConnected || isPathChanged || isHeadlessChanged) {
+        console.log(`[Backend] ${isHeadlessChanged ? '无头模式切换' : (isPathChanged ? '路径更改' : '启动新实例')}, headless: ${headless}`);
+        
         try {
-          if (customBrowserPath) {
-            console.log(`[Backend] Using custom browser path: ${customBrowserPath}`);
+          await closeBrowser();
+
+          lastUsedBrowserPath = customBrowserPath; // 更新记录
+          lastUsedHeadless = headless;           // 更新无头模式记录
+          
+          const launchOptions = {
+            headless: !!headless, // 确保是布尔值
+            viewport: { width: 1280, height: 800 },
+            args: [
+              '--disable-blink-features=AutomationControlled',
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--incognito' // 强制开启无痕模式
+            ]
+          };
+
+          if (headless) {
+            launchOptions.args.push('--headless=new');
+          }
+
+          // 如果用户指定了本地浏览器路径，则使用它
+          if (customBrowserPath && fs.existsSync(customBrowserPath)) {
+            console.log(`使用自定义浏览器路径: ${customBrowserPath}`);
+            launchOptions.executablePath = customBrowserPath;
+            
             browserInstance = await chromium.launch(launchOptions);
             browserContext = await browserInstance.newContext({
               viewport: { width: 1280, height: 800 }
             });
           } else {
+            // 如果没指定，仍使用 Playwright 默认的持久化目录（作为兜底）
             const userDataDir = path.join(process.cwd(), 'playwright-data');
-            console.log(`[Backend] Using persistent context at: ${userDataDir}`);
             if (!fs.existsSync(userDataDir)) {
               fs.mkdirSync(userDataDir, { recursive: true });
             }
             browserContext = await chromium.launchPersistentContext(userDataDir, launchOptions);
             browserInstance = browserContext.browser();
+          }
+
+          if (browserContext) {
+            browserContext.on('close', () => {
+              console.log('浏览器上下文已关闭');
+              browserContext = null;
+              browserInstance = null;
+            });
           }
         } catch (launchError) {
           console.error('[Backend] Failed to launch browser:', launchError);
@@ -558,11 +589,15 @@ function registerIpcHandlers() {
       options?.includeDiffContent || false
     );
 
+    // 获取项目别名配置
+    const repoAliases = getSetting('REPO_ALIASES', {});
+
     // 2. 调用 AI 生成
     return await aiService.generateAILog({
       ...data,
       logs: enrichedLogs,
-      titleTemplate: getSetting('TITLE_TEMPLATE') || ''
+      titleTemplate: getSetting('TITLE_TEMPLATE') || '',
+      repoAliases
     });
   });
 
@@ -701,77 +736,103 @@ function registerIpcHandlers() {
         }
       }
 
-      // 5. 点击“写笔记”按钮 - 优化：使用合并选择器快速查找
-      const combinedSelector = 'a.jb_btn_104, a:has-text("写笔记"), a[href*="jumpToAddNote"], text=写笔记';
-      
+      // 5. 进入“写笔记”页面
       let notePage = page;
       let foundNewBtn = false;
 
+      // 定义检测是否在编辑页的函数
+      const isAtEditor = async (p) => {
+        const url = p.url();
+        // 增加对 /pc/editor 的匹配
+        if (url.includes('jumpToAddNote') || url.includes('addNote') || url.includes('editNote') || url.includes('pc/editor')) return true;
+        // 增加元素检测作为兜底：检查标题占位符或编辑器特征
+        try {
+          const editorExists = await p.$('div[contenteditable="true"].ProseMirror, #noteTitle, .note-title-input, text=请输入标题');
+          return !!editorExists;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      // 检查当前是否已经在编辑页
+      if (await isAtEditor(page)) {
+        console.log('检测到当前已在编辑页，跳过跳转逻辑');
+        foundNewBtn = true;
+      }
+
+      // 尝试点击“写笔记”按钮
+      const combinedSelector = 'a.jb_btn_104, a:has-text("写笔记"), a[href*="jumpToAddNote"], text=写笔记';
       const fastClick = async (frame) => {
         try {
           const btn = await frame.$(combinedSelector);
           if (btn) {
-            console.log(`快速定位成功，正在进入写笔记页面...`);
+            console.log(`定位到“写笔记”按钮，正在点击...`);
             const [newPage] = await Promise.all([
               browserContext.waitForEvent('page', { timeout: 5000 }).catch(() => null),
               btn.click()
             ]);
-            if (newPage) notePage = newPage;
+            if (newPage) {
+              notePage = newPage;
+              // 等待新页面加载一点点
+              await notePage.waitForTimeout(1000);
+            }
             return true;
           }
         } catch (e) {}
         return false;
       };
 
-      // 1. 尝试快速点击
-      foundNewBtn = await fastClick(page);
+      if (!foundNewBtn) {
+        foundNewBtn = await fastClick(page);
+      }
 
-      // 2. 如果没找到且不在笔记页，直接跳转（最快方式）
-      if (!foundNewBtn && !page.url().includes('jumpToAddNote')) {
-        console.log('正在执行极速跳转...');
+      // 如果还没找到且不在笔记页，尝试直接 URL 跳转
+      if (!foundNewBtn && !(await isAtEditor(page))) {
+        console.log('未进入编辑页，尝试极速跳转...');
         const currentUrl = page.url();
         const domain = currentUrl.includes('noteyd.chaoxing.com') ? 'noteyd.chaoxing.com' : 'note.chaoxing.com';
         const jumpUrl = `https://${domain}/pc/note_notebook/jumpToAddNote`;
         
         try {
           await page.goto(jumpUrl, { waitUntil: 'load', timeout: 20000 });
-          // 跳转后检查是否真的到了编辑页
-          await page.waitForTimeout(1000);
-          if (page.url().includes('jumpToAddNote')) {
+          await page.waitForTimeout(1500);
+          if (await isAtEditor(page)) {
             foundNewBtn = true;
             notePage = page;
-          } else {
-            console.log('跳转被重定向，尝试在当前页面寻找“写笔记”按钮...');
-            foundNewBtn = await fastClick(page);
           }
         } catch (gotoError) {
-          if (gotoError.message.includes('net::ERR_ABORTED')) {
-            console.warn('导航被中止 (ERR_ABORTED)，尝试在当前页面寻找“写笔记”按钮...');
-            foundNewBtn = await fastClick(page);
-          } else {
-            throw gotoError;
-          }
+          console.warn('跳转导航出错:', gotoError.message);
         }
       }
 
-      // 如果最终还是没找到按钮也没进入编辑页，抛出明确错误
-      if (!foundNewBtn && !notePage.url().includes('jumpToAddNote')) {
-        console.log('正在尝试最后一次尝试：直接点击页面上的写笔记文本...');
+      // 最后兜底：再次检查是否真的没进去
+      if (!foundNewBtn && !(await isAtEditor(notePage))) {
+        console.log('执行最后兜底检查与点击...');
         try {
-          await page.click('text=写笔记', { timeout: 3000 });
-          const [newPage] = await Promise.all([
-            browserContext.waitForEvent('page', { timeout: 5000 }).catch(() => null),
-            page.waitForTimeout(500)
-          ]);
-          if (newPage) notePage = newPage;
-          foundNewBtn = true;
-        } catch (e) {
-          throw new Error('未能进入“写笔记”页面，请手动点击学习通页面上的“写笔记”按钮后再试');
-        }
+          const lastResortSelector = 'text=写笔记, .jb_btn_104, a:has-text("写笔记")';
+          await page.click(lastResortSelector, { timeout: 3000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+          
+          // 检查所有打开的页面，看看有没有哪个是编辑页
+          const allPages = browserContext.pages();
+          for (const p of allPages) {
+            if (await isAtEditor(p)) {
+              notePage = p;
+              foundNewBtn = true;
+              console.log('在多页面检查中找到了编辑页');
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 最终判定
+      if (!foundNewBtn && !(await isAtEditor(notePage))) {
+        throw new Error('未能进入“写笔记”页面，请手动点击学习通页面上的“写笔记”按钮后再试');
       }
 
       // 6. 切换笔记本逻辑 (针对编辑页)
-      if (notePage.url().includes('jumpToAddNote') || notePage.url().includes('addNote')) {
+      if (await isAtEditor(notePage)) {
         console.log('正在检查编辑页笔记本分类...');
         try {
           // 优化：不再强制等待 domcontentloaded，直接等待关键元素
@@ -871,16 +932,24 @@ function registerIpcHandlers() {
       try {
         const contentEl = await notePage.waitForSelector('div[contenteditable="true"].ProseMirror', { timeout: 5000 });
         if (contentEl) {
-          await contentEl.evaluate((node, val) => {
-            node.innerHTML = val;
+          // 预处理内容：去掉每行开头的多余空格（缩进），防止在编辑器中出现多余的留白
+          const cleanedContent = content.split('\n').map(line => line.trimStart()).join('\n');
+          // 将 Markdown 转换为 HTML
+          const htmlContent = marked.parse(cleanedContent);
+
+          await contentEl.evaluate((node, html) => {
+            // 使用 innerHTML 注入带格式的内容
+            node.innerHTML = html;
             node.dispatchEvent(new Event('input', { bubbles: true }));
-          }, marked.parse(content));
-          console.log('内容注入成功');
+          }, htmlContent);
+          console.log('内容注入成功 (HTML 模式，已去除缩进)');
         }
       } catch (e) {
         console.warn('编辑器内容注入失败，尝试模拟按键填充...');
         await notePage.keyboard.press('Tab');
-        await notePage.keyboard.type(content, { delay: 0 });
+        // 模拟按键填充时，我们也简单处理一下缩进
+        const cleanedContent = content.split('\n').map(line => line.trimStart()).join('\n');
+        await notePage.keyboard.type(cleanedContent, { delay: 0 });
       }
 
       // 在点击保存前稍微等待，确保框架已经处理完上面的事件
