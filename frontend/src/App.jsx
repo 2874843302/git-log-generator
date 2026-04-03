@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from './services/api';
 import dayjs from 'dayjs';
+import { buildNoteTitleFromTemplate } from './utils/noteTitleTemplate';
 import { GitCommit, AlertCircle, Clock, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -60,6 +61,7 @@ function App() {
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
+  const [cnHolidayCalendarEnabled, setCnHolidayCalendarEnabled] = useState(true);
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -91,6 +93,8 @@ function App() {
   const [updateError, setUpdateError] = useState('');
   const [checkingLogs, setCheckingLogs] = useState(false);
   const [missingLogDates, setMissingLogDates] = useState(null);
+  /** 日志检查「待补全」多选，YYYYMMDD；默认与 missingLogDates 一致（全选） */
+  const [selectedMissingDates, setSelectedMissingDates] = useState([]);
   const [showLatestVersionTip, setShowLatestVersionTip] = useState(false); // 控制最新版本提示的显示
 
   useEffect(() => {
@@ -172,25 +176,11 @@ function App() {
     console.log(`[Frontend] handleSyncToXuexitong 被调用, headless: ${headless}, isFoolMode: ${isFoolMode}, silentNotify: ${silentNotify}`);
     const syncDate = targetDate || endDate;
     
-    // 生成同步标题
-    let syncTitle = `工作日志 ${syncDate}`;
-    if (titleTemplate) {
-      const formattedDate = dayjs(syncDate).format('YYYYMMDD');
-      const formattedDateHyphen = dayjs(syncDate).format('YYYY-MM-DD');
-      const formattedDateCN = dayjs(syncDate).format('YYYY年M月D日');
-      
-      syncTitle = titleTemplate
-        .replace(/{date}/g, formattedDate)
-        .replace(/{date-hyphen}/g, formattedDateHyphen)
-        .replace(/{date-cn}/g, formattedDateCN)
-        .replace(/{author}/g, selectedAuthor || defaultUser || 'Unknown')
-        .replace(/{repo}/g, repoPaths.length > 0 ? (repoPaths[0].split(/[/\\]/).pop() || 'MultiRepos') : 'MultiRepos');
-      
-      // 自动替换模板中可能存在的旧日期格式
-      syncTitle = syncTitle.replace(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/g, formattedDateHyphen);
-      syncTitle = syncTitle.replace(/\d{4}年\d{1,2}月\d{1,2}日/g, formattedDateCN);
-      syncTitle = syncTitle.replace(/\d{8}/g, formattedDate);
-    }
+    // 生成同步标题（与后端「日志检查」使用同一套模板与默认：工作日志-YYYY-MM-DD）
+    const syncTitle = buildNoteTitleFromTemplate(titleTemplate, syncDate, {
+      author: selectedAuthor || defaultUser || 'Unknown',
+      repo: repoPaths.length > 0 ? (repoPaths[0].split(/[/\\]/).pop() || 'MultiRepos') : 'MultiRepos',
+    });
 
     try {
       const res = await api.createXuexitongNote({
@@ -406,6 +396,12 @@ function App() {
    */
   const handleAutoFillLogs = async (mode) => {
     if (!missingLogDates || missingLogDates.length === 0 || loading) return;
+
+    const datesToFill = selectedMissingDates.filter((d) => missingLogDates.includes(d)).sort();
+    if (datesToFill.length === 0) {
+      setError('请至少选中一天需要补全的日期');
+      return;
+    }
     
     if (!repoPaths || repoPaths.length === 0) {
       setError('未选择任何仓库，请先在左侧选择需要补全记录的仓库');
@@ -420,10 +416,10 @@ function App() {
     try {
       let currentLogs = logs;
       
-      // 如果是按天补全，自动获取缺失日期的提交记录
+      // 如果是按天补全，自动获取选中补全日期的提交记录
       if (mode === 'daily') {
-        // 获取缺失日期的范围
-        const sortedDates = [...missingLogDates].sort();
+        // 获取日期范围
+        const sortedDates = [...datesToFill];
         const firstDate = sortedDates[0];
         const lastDate = sortedDates[sortedDates.length - 1];
         
@@ -444,7 +440,7 @@ function App() {
       }
 
       const validLogs = currentLogs.filter(log => !ignoredHashes.has(log.hash));
-      console.log(`[一键补全] 开始执行，模式: ${mode}，缺失日期: ${missingLogDates.length} 天，有效提交: ${validLogs.length} 条`);
+      console.log(`[一键补全] 开始执行，模式: ${mode}，补全日期: ${datesToFill.length} 天，有效提交: ${validLogs.length} 条`);
       
       // 按日期分组日志 (用于 daily 模式)
       const logsByDate = {};
@@ -460,8 +456,8 @@ function App() {
       const fillData = [];
       
       if (mode === 'daily') {
-        // 模式1: 按天补全 - 为每个缺失日期分配对应日期的提交
-        for (const missDate of missingLogDates) {
+        // 模式1: 按天补全 - 为每个选中日期分配对应日期的提交
+        for (const missDate of datesToFill) {
           // 将 20260128 格式转换为 2026-01-28
           const formattedDate = `${missDate.substring(0, 4)}-${missDate.substring(4, 6)}-${missDate.substring(6, 8)}`;
           const dayLogs = logsByDate[formattedDate] || [];
@@ -469,11 +465,11 @@ function App() {
           fillData.push({ date: missDate, logs: dayLogs });
         }
       } else {
-        // 模式2: 平均分配 - 将所有提交平均分给缺失的日期
-        const logsPerDay = Math.ceil(validLogs.length / missingLogDates.length);
+        // 模式2: 平均分配 - 将所有提交平均分给选中的日期
+        const logsPerDay = Math.ceil(validLogs.length / datesToFill.length);
         let currentLogIndex = 0;
         
-        for (const missDate of missingLogDates) {
+        for (const missDate of datesToFill) {
           const endIndex = Math.min(currentLogIndex + logsPerDay, validLogs.length);
           const dayLogs = validLogs.slice(currentLogIndex, endIndex);
           
@@ -751,6 +747,7 @@ function App() {
       const res = await api.checkXuexitongLogs({ headless: true });
       if (res.success) {
         setMissingLogDates(res.missingDates);
+        setSelectedMissingDates(res.missingDates.length > 0 ? [...res.missingDates] : []);
         if (res.missingDates.length === 0) {
           api.showNotification({
             title: '日志检查完成',
@@ -801,6 +798,9 @@ function App() {
       
       setScheduleEnabled(res.SCHEDULE_ENABLED === 'true' || res.SCHEDULE_ENABLED === true);
       setScheduleTime(res.SCHEDULE_TIME || '18:00');
+      setCnHolidayCalendarEnabled(
+        res.CN_HOLIDAY_CALENDAR_ENABLED !== 'false' && res.CN_HOLIDAY_CALENDAR_ENABLED !== false
+      );
       
       // 加载邮件配置
       setEmailAddress(res.EMAIL_ADDRESS || '');
@@ -891,6 +891,9 @@ function App() {
       if (key === 'FAILURE_SOUND') setFailureSound(value);
       if (key === 'SCHEDULE_ENABLED') setScheduleEnabled(value === 'true' || value === true);
       if (key === 'SCHEDULE_TIME') setScheduleTime(value);
+      if (key === 'CN_HOLIDAY_CALENDAR_ENABLED') {
+        setCnHolidayCalendarEnabled(value === 'true' || value === true);
+      }
       if (key === 'EMAIL_ADDRESS') setEmailAddress(value);
       if (key === 'DAILY_EMAIL_ENABLED') setDailyEmailEnabled(value === 'true' || value === true);
       if (key === 'WEEKLY_EMAIL_ENABLED') setWeeklyEmailEnabled(value === 'true' || value === true);
@@ -1147,6 +1150,19 @@ function App() {
             checkLogs={handleCheckLogs}
             checkingLogs={checkingLogs}
             missingLogDates={missingLogDates}
+            selectedMissingDates={selectedMissingDates}
+            onToggleMissingDate={(date) => {
+              setSelectedMissingDates((prev) => {
+                if (prev.includes(date)) {
+                  return prev.filter((d) => d !== date);
+                }
+                return [...prev, date].sort();
+              });
+            }}
+            onSelectAllMissingDates={() => {
+              if (missingLogDates?.length) setSelectedMissingDates([...missingLogDates]);
+            }}
+            onDeselectAllMissingDates={() => setSelectedMissingDates([])}
             autoFillLogs={handleAutoFillLogs}
             openBranchPicker={(pos) => {
               setBranchPickerOpen(true);
@@ -1533,6 +1549,8 @@ function App() {
                 updateScheduleEnabled={(val) => updateConfig('SCHEDULE_ENABLED', val)}
                 scheduleTime={scheduleTime}
                 updateScheduleTime={(val) => updateConfig('SCHEDULE_TIME', val)}
+                cnHolidayCalendarEnabled={cnHolidayCalendarEnabled}
+                updateCnHolidayCalendarEnabled={(val) => updateConfig('CN_HOLIDAY_CALENDAR_ENABLED', val)}
                 titleTemplate={titleTemplate}
               updateTitleTemplate={(val) => updateConfig('TITLE_TEMPLATE', val)}
               loading={loading}

@@ -4,6 +4,8 @@ const { app } = require('electron');
 const cron = require('node-cron');
 const { getSetting } = require('./database');
 const emailConfig = require('./emailConfig');
+const { buildNoteTitleFromTemplate } = require('./noteTitleTemplate');
+const holidayCalendar = require('./holidayCalendar');
 const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
 const dayjs = require('dayjs');
@@ -108,14 +110,14 @@ class SchedulerService {
                 await page.waitForURL('**chaoxing.com/**', { timeout: 60000 });
             }
 
-            // 获取最近7天的日期字符串 (YYYYMMDD)
-            const targetDates = [];
-            for (let i = 0; i < 7; i++) {
-                const d = dayjs().subtract(i, 'day');
-                // 仅检查工作日 (1-5)
-                if (d.day() !== 0 && d.day() !== 6) {
-                    targetDates.push(d.format('YYYYMMDD'));
-                }
+            const holidaySetting = getSetting('CN_HOLIDAY_CALENDAR_ENABLED');
+            const useCnHoliday = holidaySetting !== 'false' && holidaySetting !== false;
+            let targetDates;
+            try {
+                targetDates = await holidayCalendar.recentNaturalDaysYYYYMMDDForLogCheck(7, useCnHoliday);
+            } catch (e) {
+                console.warn('[Scheduler] 节假日历计算失败，回退为仅周一～周五:', e.message);
+                targetDates = await holidayCalendar.recentNaturalDaysYYYYMMDDForLogCheck(7, false);
             }
 
             // 等待并获取标题
@@ -129,22 +131,26 @@ class SchedulerService {
                 }).filter(t => t.length > 0)
             );
 
-            const missingDates = targetDates.filter(target => {
-                const year = target.substring(0, 4);
-                const month = target.substring(4, 6);
-                const day = target.substring(6, 8);
-                const normalizedMonth = month.replace(/^0/, '');
-                const normalizedDay = day.replace(/^0/, '');
+            const titleTemplate = getSetting('TITLE_TEMPLATE') ?? '';
+            const defaultUser = getSetting('DEFAULT_USER') ?? '';
+            const repoRaw = getSetting('FOOL_MODE_SELECTED_REPOS') || getSetting('LAST_SELECTED_REPOS') || '';
+            const firstRepo = repoRaw.split(',').map((s) => s.trim()).filter(Boolean)[0] || '';
+            const repoName = firstRepo
+                ? firstRepo.replace(/[\\/]$/, '').split(/[/\\]/).pop()
+                : 'MultiRepos';
 
-                const exactFormats = [
-                    target,
-                    `${year}-${month}-${day}`,
-                    `${year}/${month}/${day}`,
-                    `${year}年${month}月${day}日`,
-                    `${year}年${normalizedMonth}月${normalizedDay}日`
-                ];
-
-                return !titles.some(title => exactFormats.some(f => title.includes(f)));
+            const missingDates = targetDates.filter((target) => {
+                let expected;
+                try {
+                    expected = buildNoteTitleFromTemplate(titleTemplate, target, {
+                        author: defaultUser || 'Unknown',
+                        repo: repoName || 'MultiRepos',
+                    });
+                } catch (e) {
+                    console.error('[Scheduler] buildNoteTitleFromTemplate failed:', e);
+                    return true;
+                }
+                return !titles.some((title) => title.includes(expected));
             });
 
             return missingDates;

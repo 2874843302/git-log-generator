@@ -22,6 +22,10 @@ const ConfigPanel = ({
   checkLogs,
   checkingLogs,
   missingLogDates,
+  selectedMissingDates = [],
+  onToggleMissingDate,
+  onSelectAllMissingDates,
+  onDeselectAllMissingDates,
   autoFillLogs,
   xuexitongLogUrl,
   openBranchPicker,
@@ -162,21 +166,55 @@ const ConfigPanel = ({
                       </div>
                     ) : (
                       <div className="space-y-1.5">
-                        <div className="flex items-center gap-2 font-black uppercase text-[9px]">
-                          <AlertCircle size={12} className="shrink-0" />
-                          <span>缺失日志 ({missingLogDates.length} 天)</span>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 font-black uppercase text-[9px]">
+                            <AlertCircle size={12} className="shrink-0" />
+                            <span>缺失日志 ({missingLogDates.length} 天)</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[8px] font-bold">
+                            <span className="text-amber-700/90">
+                              已选 {selectedMissingDates.length}/{missingLogDates.length} 天
+                            </span>
+                            <button
+                              type="button"
+                              onClick={onSelectAllMissingDates}
+                              className="px-1.5 py-0.5 rounded bg-white/80 border border-amber-200/60 text-amber-800 hover:bg-amber-100/80 transition-colors"
+                            >
+                              全选
+                            </button>
+                            <button
+                              type="button"
+                              onClick={onDeselectAllMissingDates}
+                              className="px-1.5 py-0.5 rounded bg-white/80 border border-amber-200/60 text-amber-800 hover:bg-amber-100/80 transition-colors"
+                            >
+                              全不选
+                            </button>
+                          </div>
                         </div>
-                      <div className="grid grid-cols-3 gap-1 mt-1">
+                      <div className="grid grid-cols-3 gap-1 mt-1 max-h-[140px] overflow-y-auto custom-scrollbar pr-0.5">
                         {missingLogDates.map(date => {
-                          // 将 20260128 转换为 1/28 格式
                           const month = parseInt(date.substring(4, 6));
                           const day = parseInt(date.substring(6, 8));
                           const displayDate = `${month}/${day}`;
+                          const checked = selectedMissingDates.includes(date);
                           
                           return (
-                            <div key={date} className="bg-white/60 px-1.5 py-1 rounded-lg border border-amber-200/50 text-center font-mono text-[9px] font-bold">
-                              {displayDate}
-                            </div>
+                            <label
+                              key={date}
+                              className={`flex items-center justify-center gap-1.5 bg-white/60 px-1.5 py-1.5 rounded-lg border cursor-pointer select-none transition-colors ${
+                                checked ? 'border-amber-400/70 ring-1 ring-amber-300/40' : 'border-amber-200/50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="rounded border-amber-300 text-amber-600 focus:ring-amber-500 w-3 h-3 shrink-0"
+                                checked={checked}
+                                onChange={() => onToggleMissingDate?.(date)}
+                              />
+                              <span className="font-mono text-[9px] font-bold text-amber-900 tabular-nums">
+                                {displayDate}
+                              </span>
+                            </label>
                           );
                         })}
                       </div>
@@ -186,25 +224,26 @@ const ConfigPanel = ({
                         <div className="flex gap-1.5">
                           <button
                             onClick={() => autoFillLogs('daily')}
-                            disabled={loading}
+                            disabled={loading || selectedMissingDates.length === 0}
                             className="flex-1 py-1.5 rounded-lg bg-blue-600 text-white text-[9px] font-bold hover:bg-blue-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm group relative"
-                            title="自动获取选中仓库在缺失日期的提交并补全"
+                            title="对上方勾选的日期补全；按天匹配各日 Git 提交"
                           >
                             按天补全
-                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-[8px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl">
-                              自动查询 Git 记录并同步
+                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-[8px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl z-10">
+                              仅补全已勾选日期
                             </span>
                           </button>
                           <button
                             onClick={() => autoFillLogs('average')}
-                            disabled={loading}
+                            disabled={loading || selectedMissingDates.length === 0}
                             className="flex-1 py-1.5 rounded-lg bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm"
+                            title="将提交平均分配到已勾选的日期"
                           >
                             平均分配
                           </button>
                         </div>
                         <p className="text-[8px] text-amber-600 opacity-80 italic">
-                          补全后将自动同步到学习通。<b>按天补全</b>会自动查询所选仓库记录。
+                          仅对<b>已勾选</b>的日期补全并同步到学习通。<b>按天补全</b>会按日期拉取 Git 记录。
                         </p>
                       </div>
                     </div>

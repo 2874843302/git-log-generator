@@ -17,6 +17,8 @@ const scheduler = require('./scheduler');
 const { templates } = require('./server/constants/templates');
 const { getSetting, setSetting, getAllSettings } = require('./database');
 const emailConfig = require('./emailConfig');
+const { buildNoteTitleFromTemplate } = require('./noteTitleTemplate');
+const holidayCalendar = require('./holidayCalendar');
 
 /**
  * 迁移 .env 文件到 SQLite (仅在 SQLite 中没有对应键时迁移)
@@ -101,47 +103,23 @@ function registerIpcHandlers() {
       throw new Error('未配置学习通账号密码，请在设置中配置后再试');
     }
 
-    // 1. 计算本周的工作日
-    const getWorkdays = () => {
-      const workdays = [];
-      let current = new Date();
-      current.setHours(0, 0, 0, 0);
-      
-      const dayOfWeek = current.getDay(); // 0 (Sun) to 6 (Sat)
-      
-      // 计算本周一的日期
-      // 如果今天是周日(0)，则周一是 6 天前
-      // 如果今天是周一(1)，则周一是今天
-      // 如果今天是周二(2)，则周一是 1 天前
-      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      
-      const monday = new Date(current);
-      monday.setDate(current.getDate() - daysSinceMonday);
-      
-      // 从周一循环到今天
-      let temp = new Date(monday);
-      while (temp <= current) {
-        const d = temp.getDay();
-        if (d !== 0 && d !== 6) { // 排除周六周日
-          workdays.push(new Date(temp));
-        }
-        temp.setDate(temp.getDate() + 1);
-      }
-      return workdays;
-    };
+    const holidaySetting = getSetting('CN_HOLIDAY_CALENDAR_ENABLED');
+    const useCnHoliday = holidaySetting !== 'false' && holidaySetting !== false;
 
-    const targetDates = getWorkdays();
-    const targetDateStrings = targetDates.map(d => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}${m}${day}`;
-    });
+    let targetDateStrings;
+    try {
+      targetDateStrings = await holidayCalendar.mondayToTodayYYYYMMDDForLogCheck(useCnHoliday);
+    } catch (e) {
+      console.error('[Backend] 计算检查日期失败:', e);
+      targetDateStrings = await holidayCalendar.mondayToTodayYYYYMMDDForLogCheck(false);
+    }
 
     try {
       // 2. 启动浏览器
       console.log(`[Backend] Target URL: ${targetUrl}`);
-      console.log(`[Backend] Target dates to check: ${targetDateStrings.join(', ')}`);
+      console.log(
+        `[Backend] Target dates (${useCnHoliday ? '含节假日历' : '仅周一～周五'}): ${targetDateStrings.join(', ')}`
+      );
 
       // 检查浏览器是否需要重启（路径变化、无头模式变化或已断开连接）
       const isConnected = browserContext && (browserInstance ? browserInstance.isConnected() : browserContext.browser()?.isConnected());
@@ -291,53 +269,34 @@ function registerIpcHandlers() {
       await page.close();
       console.log('[Backend] Page closed.');
 
-      // 6. 比对结果
-      console.log('[Backend] Comparing found titles with target dates...');
-      const missingDates = targetDateStrings.filter(target => {
-        // 1. 首先检查是否有精确匹配（标题完全包含 YYYYMMDD 格式）
-        const hasExactMatch = titles.some(title => title.includes(target));
-        if (hasExactMatch) {
-          console.log(`[Backend] Found exact match for ${target}`);
-          return false; // 不包含在缺失列表中
+      // 6. 比对结果：按「学习通笔记标题模板」生成每日预期标题，检查列表中是否有条目包含该字符串
+      const titleTemplate = getSetting('TITLE_TEMPLATE') ?? '';
+      const defaultUser = getSetting('DEFAULT_USER') ?? '';
+      const repoRaw = getSetting('FOOL_MODE_SELECTED_REPOS') || getSetting('LAST_SELECTED_REPOS') || '';
+      const firstRepo = repoRaw.split(',').map((s) => s.trim()).filter(Boolean)[0] || '';
+      const repoName = firstRepo
+        ? firstRepo.replace(/[\\/]$/, '').split(/[/\\]/).pop()
+        : 'MultiRepos';
+
+      console.log('[Backend] Comparing with title template (empty = default 工作日志-{date-hyphen}):', titleTemplate || '(default)');
+
+      const missingDates = targetDateStrings.filter((target) => {
+        let expected;
+        try {
+          expected = buildNoteTitleFromTemplate(titleTemplate, target, {
+            author: defaultUser || 'Unknown',
+            repo: repoName || 'MultiRepos',
+          });
+        } catch (e) {
+          console.error('[Backend] buildNoteTitleFromTemplate failed:', e);
+          return true;
         }
-        
-        // 2. 如果没有精确匹配，检查是否有其他日期格式（如 2026-02-03, 2026/02/03, 02/03/2026 等）
-        const year = target.substring(0, 4);
-        const month = target.substring(4, 6);
-        const day = target.substring(6, 8);
-        
-        // 处理月份和日期的前导0
-        const normalizedMonth = month.replace(/^0/, ''); // 01 -> 1
-        const normalizedDay = day.replace(/^0/, ''); // 08 -> 8
-        
-        // 只匹配完整的日期格式，避免零散数字组合匹配
-        // 支持：YYYY-MM-DD, YYYY/MM/DD, MM-DD-YYYY, MM/DD/YYYY, YYYY年MM月DD日
-        // 以及不带分隔符的精确格式（如 YYYYMMDD, YYYYMD, YYYYMMD, YYYYMD 等）
-        const exactFormats = [
-          `${year}[-/]${month}[-/]${day}`, // 2026-02-03, 2026/02/03
-          `${year}[-/]${normalizedMonth}[-/]${normalizedDay}`, // 2026-2-3, 2026/2/3
-          `${month}[-/]${day}[-/]${year}`, // 02-03-2026, 02/03/2026
-          `${normalizedMonth}[-/]${normalizedDay}[-/]${year}`, // 2-3-2026, 2/3/2026
-          `${year}年${month}月${day}日`, // 2026年02月03日
-          `${year}年${normalizedMonth}月${normalizedDay}日`, // 2026年2月3日
-          `${year}${month}${day}`, // 20260203
-          `${year}${normalizedMonth}${day}`, // 2026203
-          `${year}${month}${normalizedDay}`, // 2026023
-          `${year}${normalizedMonth}${normalizedDay}` // 202623
-        ];
-        
-        // 检查是否有任何格式匹配
-        const hasFormatMatch = titles.some(title => {
-          return exactFormats.some(format => title.includes(format));
-        });
-        
-        if (hasFormatMatch) {
-          console.log(`[Backend] Found format match for ${target}`);
-          return false; // 不包含在缺失列表中
+        const found = titles.some((title) => title.includes(expected));
+        if (found) {
+          console.log(`[Backend] Match for ${target}: list contains "${expected}"`);
+          return false;
         }
-        
-        // 3. 如果都没有匹配，则认为是缺失的
-        console.log(`[Backend] No match found for ${target}`);
+        console.log(`[Backend] Missing ${target}: no title contains "${expected}"`);
         return true;
       });
 
@@ -451,10 +410,11 @@ function registerIpcHandlers() {
       FAILURE_SOUND: '啊咧？.mp3',
       SCHEDULE_ENABLED: 'false',
       SCHEDULE_TIME: '18:00',
-      TITLE_TEMPLATE: '',
+      TITLE_TEMPLATE: '工作日志-{date-hyphen}',
       EMAIL_ADDRESS: '',
       DAILY_EMAIL_ENABLED: 'false',
-      WEEKLY_EMAIL_ENABLED: 'false'
+      WEEKLY_EMAIL_ENABLED: 'false',
+      CN_HOLIDAY_CALENDAR_ENABLED: 'true'
     };
 
     try {

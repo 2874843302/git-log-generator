@@ -30,6 +30,8 @@ const SettingsModal = ({
   updateScheduleEnabled,
   scheduleTime,
   updateScheduleTime,
+  cnHolidayCalendarEnabled,
+  updateCnHolidayCalendarEnabled,
   titleTemplate,
   updateTitleTemplate,
   emailAddress,
@@ -475,11 +477,11 @@ const SettingsModal = ({
                       <textarea 
                         value={localTitleTemplate}
                         onChange={(e) => setLocalTitleTemplate(e.target.value)}
-                        placeholder="例如: [工作日志] {date} - {author}"
+                        placeholder="默认：工作日志-{date-hyphen}（即 工作日志-2026-01-01）"
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-4 pr-4 py-3 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all font-mono min-h-[80px] resize-none"
                       />
                       <p className="text-[10px] text-gray-400 px-1">
-                        同步到学习通时的笔记标题。支持 {`{date}`} (YYYYMMDD格式)、{`{author}`}、{`{repo}`}。
+                        同步与「日志检查」均按此模板匹配。支持 {`{date}`}、{`{date-hyphen}`}、{`{date-cn}`}、{`{author}`}、{`{repo}`}；留空则用默认「工作日志-YYYY-MM-DD」。
                       </p>
                     </div>
                     <button 
@@ -590,6 +592,25 @@ const SettingsModal = ({
                           保存账号密码
                         </button>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 mt-1 border-t border-indigo-100/70">
+                      <div className="space-y-1 pr-2">
+                        <span className="text-[11px] font-bold text-gray-700 block">日志检查参照中国节假日</span>
+                        <p className="text-[9px] text-gray-500 leading-snug">
+                          放假不要求笔记、周末补班会检查（数据源 timor.tech，已下载年份可离线使用）
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateCnHolidayCalendarEnabled(!cnHolidayCalendarEnabled)}
+                        className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${cnHolidayCalendarEnabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <motion.div
+                          animate={{ x: cnHolidayCalendarEnabled ? 22 : 2 }}
+                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                        />
+                      </button>
                     </div>
                   </div>
                 </section>

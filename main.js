@@ -1,6 +1,38 @@
 const { app, BrowserWindow, nativeImage } = require('electron');
 const path = require('path');
 
+// Windows / 无控制台启动时，stdout 可能已断开，console.log 内部 write 会同步抛 EPIPE 导致主进程崩溃
+function ignoreStdoutStderrEpipe() {
+    ['stdout', 'stderr'].forEach((name) => {
+        const stream = process[name];
+        if (!stream || typeof stream.write !== 'function') return;
+        const origWrite = stream.write.bind(stream);
+        stream.write = (chunk, encoding, cb) => {
+            try {
+                return origWrite(chunk, encoding, cb);
+            } catch (err) {
+                if (err && err.code === 'EPIPE') {
+                    if (typeof encoding === 'function') encoding();
+                    else if (typeof cb === 'function') cb();
+                    return true;
+                }
+                throw err;
+            }
+        };
+    });
+    if (process.stdout && typeof process.stdout.on === 'function') {
+        process.stdout.on('error', (err) => {
+            if (err && err.code === 'EPIPE') return;
+        });
+    }
+    if (process.stderr && typeof process.stderr.on === 'function') {
+        process.stderr.on('error', (err) => {
+            if (err && err.code === 'EPIPE') return;
+        });
+    }
+}
+ignoreStdoutStderrEpipe();
+
 // 设置应用名称（用于通知显示等）
 app.name = 'Git Log Generator';
 // 设置 Windows 的 AppUserModelId 以确保通知能正确关联图标和名称
