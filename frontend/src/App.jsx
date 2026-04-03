@@ -1,9 +1,81 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from './services/api';
 import dayjs from 'dayjs';
-import { buildNoteTitleFromTemplate } from './utils/noteTitleTemplate';
 import { GitCommit, AlertCircle, Clock, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+
+// NOTE: 为了避免 CI/干净检出环境找不到新模块（untracked file），
+// 这里把「标题模板 -> 预期笔记标题」逻辑内联到 App.jsx。
+const DEFAULT_NOTE_TITLE_TEMPLATE = '工作日志-{date-hyphen}';
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function parseDateParts(dateStr) {
+  // dateStr: YYYYMMDD or YYYY-MM-DD
+  let y;
+  let mo;
+  let da;
+  if (dateStr.includes('-')) {
+    const p = dateStr.split('-');
+    y = parseInt(p[0], 10);
+    mo = parseInt(p[1], 10);
+    da = parseInt(p[2], 10);
+  } else {
+    y = parseInt(dateStr.slice(0, 4), 10);
+    mo = parseInt(dateStr.slice(4, 6), 10);
+    da = parseInt(dateStr.slice(6, 8), 10);
+  }
+  if (!y || !mo || !da) throw new Error(`Invalid date: ${dateStr}`);
+  return { y, mo, da };
+}
+
+function buildNoteTitleFromTemplate(rawTemplate, dateInput, options = {}) {
+  const author = options.author != null ? String(options.author) : 'Unknown';
+  const repo = options.repo != null ? String(options.repo) : 'MultiRepos';
+
+  const template =
+    rawTemplate && String(rawTemplate).trim()
+      ? String(rawTemplate)
+      : DEFAULT_NOTE_TITLE_TEMPLATE;
+
+  let ymdStr;
+  if (typeof dateInput === 'string') {
+    ymdStr = dateInput.includes('-') ? dateInput.replace(/-/g, '') : dateInput;
+  } else {
+    // App.jsx 里 dateInput 传入的是字符串（syncDate），这里兜底支持 Date
+    const d = dateInput;
+    ymdStr = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+  }
+
+  const { y, mo, da } = parseDateParts(ymdStr);
+  const formattedDate = `${y}${pad2(mo)}${pad2(da)}`;
+  const formattedDateHyphen = `${y}-${pad2(mo)}-${pad2(da)}`;
+  const formattedDateCN = `${y}年${mo}月${da}日`;
+
+  let syncTitle = template
+    .replace(/{date}/g, formattedDate)
+    .replace(/{date-hyphen}/g, formattedDateHyphen)
+    .replace(/{date-cn}/g, formattedDateCN)
+    .replace(/{author}/g, author)
+    .replace(/{repo}/g, repo);
+
+  // 支持模板里直接写死 YYYY/MM/DD 等字面量时的占位替换
+  if (template.includes('YYYY') || template.includes('MM') || template.includes('DD')) {
+    syncTitle = syncTitle
+      .replace(/YYYY/g, String(y))
+      .replace(/MM/g, pad2(mo))
+      .replace(/DD/g, pad2(da));
+  }
+
+  // 与原先前端同步逻辑一致：清理模板里可能残留的旧日期字面量
+  syncTitle = syncTitle.replace(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/g, formattedDateHyphen);
+  syncTitle = syncTitle.replace(/\d{4}年\d{1,2}月\d{1,2}日/g, formattedDateCN);
+  syncTitle = syncTitle.replace(/\d{8}/g, formattedDate);
+
+  return syncTitle;
+}
 
 // 导入拆分后的组件
 import ConfigPanel from './components/ConfigPanel';
