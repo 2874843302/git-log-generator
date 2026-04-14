@@ -1,12 +1,19 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Calendar, MessageSquare, Sparkles, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+// NOTE: 该项目的 eslint no-unused-vars 对 JSX MemberExpression（如 <motion.div>）识别不稳定；
+// 这里显式引用一次，避免误报。
+void motion;
+
 const SupplementModal = ({ 
-  isOpen, 
   onClose, 
   initialValue, 
   onSave,
+  title = '补充内容描述',
+  tip = '输入几个关键词或简短描述，AI 将基于此丰富您的补充内容。例如：“自学 React Hooks 深度解析、完成一个扫雷练手 Demo、阅读《重构》第三章”。',
+  label = '描述补充内容',
+  placeholder = '请输入补充内容关键词...',
   originPos = null
 }) => {
   const [content, setContent] = useState(initialValue || '');
@@ -19,12 +26,6 @@ const SupplementModal = ({
       y: originPos.y - window.innerHeight / 2
     };
   }, [originPos]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setContent(initialValue || '');
-    }
-  }, [isOpen, initialValue]);
 
   const handleSave = () => {
     onSave(content);
@@ -81,7 +82,7 @@ const SupplementModal = ({
             </div>
             <div>
               <h3 className="text-base font-black text-gray-800 uppercase tracking-widest leading-tight">
-                补充内容描述
+                {title}
               </h3>
               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Content Enrichment Prompt</p>
             </div>
@@ -99,19 +100,19 @@ const SupplementModal = ({
           <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 flex gap-3">
             <Sparkles size={18} className="text-indigo-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-indigo-700 font-medium leading-relaxed">
-              输入几个关键词或简短描述，AI 将基于此丰富您的补充内容。例如：“自学 React Hooks 深度解析、完成一个扫雷练手 Demo、阅读《重构》第三章”。
+              {tip}
             </p>
           </div>
 
           <div className="space-y-2">
             <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest ml-1">
-              描述补充内容
+              {label}
             </label>
             <div className="relative group">
               <textarea 
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="请输入补充内容关键词..."
+                placeholder={placeholder}
                 className="w-full bg-gray-50 border border-gray-100 rounded-2xl p-4 text-sm font-medium text-gray-700 shadow-inner focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all min-h-[120px] resize-none custom-scrollbar"
               />
               <div className="absolute right-4 bottom-4 text-gray-300">

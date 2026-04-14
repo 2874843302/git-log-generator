@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from './services/api';
 import dayjs from 'dayjs';
 import { GitCommit, AlertCircle, Clock, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+
+// NOTE: 该项目的 eslint no-unused-vars 对 JSX MemberExpression（如 <motion.div>）识别不稳定；
+// 这里显式引用一次，避免误报。
+void motion;
 
 // NOTE: 为了避免 CI/干净检出环境找不到新模块（untracked file），
 // 这里把「标题模板 -> 预期笔记标题」逻辑内联到 App.jsx。
@@ -94,7 +98,6 @@ function App() {
   // 状态管理
   const [repoPaths, setRepoPaths] = useState([]);
   const [foolModeRepos, setFoolModeRepos] = useState([]); // 傻瓜模式选中的仓库列表
-  const [baseRepoDir, setBaseRepoDir] = useState('');
   const [startDate, setStartDate] = useState(dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
   const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [authors, setAuthors] = useState([]);
@@ -151,6 +154,13 @@ function App() {
   const [supplementModalOpen, setSupplementModalOpen] = useState(false);
   const [supplementModalPos, setSupplementModalPos] = useState(null);
   const [supplementPrompt, setSupplementPrompt] = useState('');
+  const [supplementModalKey, setSupplementModalKey] = useState(0);
+  const [supplementModalMeta, setSupplementModalMeta] = useState({
+    title: '补充内容描述',
+    tip: '输入几个关键词或简短描述，AI 将基于此丰富您的补充内容。例如：“自学 React Hooks 深度解析、完成一个扫雷练手 Demo、阅读《重构》第三章”。',
+    label: '描述补充内容',
+    placeholder: '请输入补充内容关键词...'
+  });
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
   const [templatePreviewPos, setTemplatePreviewPos] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
@@ -218,6 +228,18 @@ function App() {
       if (removeErrorListener) removeErrorListener();
     };
   }, []);
+
+  // 述职总结：提供更适合“领导汇报”的默认选项与补充引导
+  useEffect(() => {
+    if (selectedTemplate === 'briefing') {
+      setTemplateOptions((prev) => ({
+        ...prev,
+        includeTomorrow: true,
+        includeProblems: true,
+        includeReflections: false
+      }));
+    }
+  }, [selectedTemplate]);
 
   // 自动选中默认用户
   useEffect(() => {
@@ -1275,6 +1297,23 @@ function App() {
                   loading={loading}
             openSupplementModal={(pos) => {
               setSupplementModalPos(pos);
+              setSupplementModalKey(Date.now());
+              // 根据模板切换补充文案（同一个弹窗复用）
+              if (selectedTemplate === 'briefing') {
+                setSupplementModalMeta({
+                  title: '述职要点（给领导汇报）',
+                  tip: '建议按业务视角填写：业务目标/场景、你负责推进的动作、达成结果（效率/质量/稳定性/交付）、跨团队协同、风险闭环、下一阶段计划与资源诉求。AI 会整理成偏年终述职风格。',
+                  label: '述职素材（可用多行）',
+                  placeholder: '例：\n- 业务目标：支撑xx场景上线，缩短xx流程时长\n- 我负责：主导需求拆解、方案推进、关键节点验收\n- 结果：按期上线，问题闭环，提升交付稳定性\n- 协同：推动产品/测试/后端联动对齐，完成联调验收\n- 风险：xx外部依赖波动，已建立替代方案与预案\n- 下一步：推进xx目标，需xx团队在xx时间前支持'
+                });
+              } else {
+                setSupplementModalMeta({
+                  title: '补充内容描述',
+                  tip: '输入几个关键词或简短描述，AI 将基于此丰富您的补充内容。例如：“自学 React Hooks 深度解析、完成一个扫雷练手 Demo、阅读《重构》第三章”。',
+                  label: '描述补充内容',
+                  placeholder: '请输入补充内容关键词...'
+                });
+              }
               setSupplementModalOpen(true);
             }}
             supplementPrompt={supplementPrompt}
@@ -1290,7 +1329,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.5.3</span>
+                  <span>Version 2.5.4</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
@@ -1575,11 +1614,15 @@ function App() {
       <AnimatePresence>
         {supplementModalOpen && (
           <SupplementModal 
-            isOpen={supplementModalOpen}
+            key={supplementModalKey}
             onClose={() => setSupplementModalOpen(false)}
             initialValue={supplementPrompt}
             onSave={(val) => setSupplementPrompt(val)}
             originPos={supplementModalPos}
+            title={supplementModalMeta.title}
+            tip={supplementModalMeta.tip}
+            label={supplementModalMeta.label}
+            placeholder={supplementModalMeta.placeholder}
           />
         )}
       </AnimatePresence>
