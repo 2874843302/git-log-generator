@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FileText, AlertCircle, Loader2, ChevronRight, Check, Sparkles, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// NOTE: 该项目的 eslint no-unused-vars 对 JSX MemberExpression（如 <motion.div>）识别不稳定；
+// 这里显式引用一次，避免误报。
+void motion;
+
 const LogGenerator = ({ 
   logs, 
   templates, 
@@ -17,7 +21,6 @@ const LogGenerator = ({
   loading,
   openSupplementModal,
   supplementPrompt,
-  setSupplementPrompt,
   openTemplatePreview,
   splitIndex
 }) => {
@@ -34,7 +37,7 @@ const LogGenerator = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  if (logs.length === 0) return null;
+  // 允许“仅补充内容”的生成（例如述职总结/无提交日）
 
   return (
     <div className="space-y-6 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-left-4 duration-700">
@@ -74,6 +77,7 @@ const LogGenerator = ({
                       weekly: '📅 周报总结',
                       kpi: '🏆 绩效自述',
                       concise: '⚡ 极简汇报',
+                      briefing: '📣 述职总结',
                       custom: '✍️ 自定义模仿风格'
                     };
                     return labels[selectedTemplate] || selectedTemplate;
@@ -97,7 +101,8 @@ const LogGenerator = ({
                         daily: '📝 日常日报',
                         weekly: '📅 周报总结',
                         kpi: '🏆 绩效自述',
-                        concise: '⚡ 极简汇报'
+                        concise: '⚡ 极简汇报',
+                        briefing: '📣 述职总结'
                       };
                       return (
                         <button
@@ -150,6 +155,11 @@ const LogGenerator = ({
         <div className="space-y-2">
           <label className="text-[10px] font-bold text-gray-400 block uppercase">附加板块</label>
           <div className="grid grid-cols-1 gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-100">
+            {logs.length === 0 && (
+              <div className="text-[10px] text-gray-500 font-medium px-1">
+                当前没有 Git 提交记录：请开启“补充内容”并填写要点，也可以继续生成。
+              </div>
+            )}
             {[
               { id: 'includeTomorrow', label: '补充内容', color: 'bg-blue-400' },
               { id: 'includeProblems', label: '遇到的问题', color: 'bg-red-400' },
@@ -168,7 +178,7 @@ const LogGenerator = ({
                       }}
                       className="ml-1 text-[10px] text-blue-500 hover:text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 animate-pulse hover:animate-none"
                     >
-                      {supplementPrompt ? '已补充' : '点击补充'}
+                      {supplementPrompt ? '已补充' : (selectedTemplate === 'briefing' ? '填写述职要点' : '点击补充')}
                     </button>
                   )}
                 </span>

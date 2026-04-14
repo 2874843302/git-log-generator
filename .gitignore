@@ -16,6 +16,7 @@ frontend/.env
 
 # Build outputs
 dist/
+_electron_runtime/
 dist-ssr/
 *.esspath
 
