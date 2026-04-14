@@ -18,7 +18,6 @@
   "build": {
     "appId": "com.gitlog.generator",
     "productName": "Git Log Generator",
-    "electronDist": "_electron_runtime",
     "directories": {
       "output": "dist_electron_2.5.4"
     },
