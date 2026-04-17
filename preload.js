@@ -1,38 +1,26 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// 暴露安全的 API 到渲染进程
-contextBridge.exposeInMainWorld('electron', {
-    /**
-     * 调用主进程定义的 IPC 处理函数 (返回 Promise)
-     * @param {string} channel 频道名称 (例如 'api:getConfig')
-     * @param {any} data 传递给处理函数的数据
-     */
+const electronApi = {
     invoke: (channel, data) => {
-        // 允许以 'api:' 开头的频道
-        if (channel.startsWith('api:')) {
+        if (typeof channel === 'string' && channel.startsWith('api:')) {
             return ipcRenderer.invoke(channel, data);
         }
-        return Promise.reject(new Error(`非法 IPC 频道: ${channel}`));
+        return Promise.reject(new Error(`Illegal IPC channel: ${channel}`));
     },
-    
-    /**
-     * 发送异步消息到主进程
-     */
+
     send: (channel, data) => {
         const validChannels = [
             'toMain',
             'check-for-update',
             'start-download-update',
-            'quit-and-install'
+            'quit-and-install',
         ];
+
         if (validChannels.includes(channel)) {
             ipcRenderer.send(channel, data);
         }
     },
-    
-    /**
-     * 接收来自主进程的消息
-     */
+
     receive: (channel, func) => {
         const validChannels = [
             'fromMain',
@@ -41,12 +29,21 @@ contextBridge.exposeInMainWorld('electron', {
             'update-error',
             'checking-for-update',
             'download-progress',
-            'update-downloaded'
+            'update-downloaded',
         ];
+
         if (validChannels.includes(channel)) {
-            const subscription = (event, ...args) => func(...args);
+            const subscription = (_event, ...args) => func(...args);
             ipcRenderer.on(channel, subscription);
             return () => ipcRenderer.removeListener(channel, subscription);
         }
-    }
-});
+
+        return () => {};
+    },
+
+    // Compatibility helper for code that expects a dedicated version API.
+    getAppVersion: () => ipcRenderer.invoke('api:getAppVersion'),
+};
+
+contextBridge.exposeInMainWorld('electron', electronApi);
+contextBridge.exposeInMainWorld('electronAPI', electronApi);

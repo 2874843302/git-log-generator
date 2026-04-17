@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from './services/api';
 import dayjs from 'dayjs';
-import { GitCommit, AlertCircle, Clock, RefreshCw } from 'lucide-react';
+import { GitCommit, AlertCircle, Clock, RefreshCw, ExternalLink } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 // NOTE: 该项目的 eslint no-unused-vars 对 JSX MemberExpression（如 <motion.div>）识别不稳定；
@@ -312,6 +312,21 @@ function App() {
       return { success: false, date: syncDate, error: err.message };
     }
   }, [endDate, playNotificationSound, titleTemplate, selectedAuthor, defaultUser, repoPaths]);
+
+  // 打开学习通“笔记页面入口”（外部跳转）
+  const handleOpenXuexitongEntry = React.useCallback(async () => {
+    const url = xuexitongLogUrl || 'https://note.chaoxing.com/pc/index';
+    try {
+      await api.openExternalUrl({ url });
+    } catch (err) {
+      const errorMsg = err?.message || '打开笔记页面失败';
+      api.showNotification({
+        title: '打开失败',
+        body: errorMsg,
+        silent: true
+      });
+    }
+  }, [xuexitongLogUrl]);
 
   const generateLog = React.useCallback(async (customLogs = null, customTemplate = null, customRepoPaths = null, customOptions = null) => {
     // 检查参数是否为 React 事件对象
@@ -1329,7 +1344,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.5.4</span>
+                  <span>Version 2.5.5</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
@@ -1368,6 +1383,15 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+              onClick={handleOpenXuexitongEntry}
+              className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
+              title="打开学习通笔记页面"
+            >
+              <ExternalLink size={12} />
+              打开学习通
+            </button>
+
              {/* 倒计时显示 */}
              {countdown && (
                <div className="flex items-center gap-3 px-4 py-1.5 bg-blue-50 border border-blue-100 rounded-full group relative overflow-hidden">

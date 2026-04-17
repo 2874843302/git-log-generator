@@ -15,7 +15,7 @@ const MarkdownPreview = ({ generatedLog, onSyncToXuexitong }) => {
       .replace(/^#+\s+/gm, '') // 移除标题符号
       .replace(/(\*\*|__)(.*?)\1/g, '$2') // 移除粗体
       .replace(/(\*|_)(.*?)\1/g, '$2') // 移除斜体
-      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // 移除链接，保留文本
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 移除链接，保留文本
       .replace(/`([^`]+)`/g, '$1') // 移除行内代码块
       .replace(/^\s*[-*+]\s+/gm, '• ') // 将无序列表符号统一为圆点
       .replace(/^\s*>\s+/gm, '') // 移除引用符号

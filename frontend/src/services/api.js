@@ -33,6 +33,9 @@ const api = {
   showNotification: (data) => window.electron.invoke('api:showNotification', data),
   listSounds: () => window.electron.invoke('api:listSounds'),
 
+  // 外部跳转（如学习通笔记入口）
+  openExternalUrl: (data) => window.electron.invoke('api:openExternalUrl', data),
+
   // 邮件相关
   sendTestEmail: (email) => window.electron.invoke('api:sendTestEmail', email),
 

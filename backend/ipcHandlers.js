@@ -1,4 +1,4 @@
-const { ipcMain, Notification, app } = require('electron');
+const { ipcMain, Notification, app, shell } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -89,6 +89,15 @@ async function closeBrowser() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('api:getAppVersion', async () => {
+    try {
+      return app.getVersion();
+    } catch (error) {
+      console.error('获取应用版本失败:', error);
+      return '';
+    }
+  });
+
   // 学习通日志检查 (放在最前面确保优先注册)
   ipcMain.handle('api:checkXuexitongLogs', async (event, { headless = true }) => {
     console.log(`[Backend] checkXuexitongLogs called. headless: ${headless}`);
@@ -964,6 +973,18 @@ function registerIpcHandlers() {
     } catch (err) {
       console.error('Notification Error:', err);
       return { success: false, error: err.message };
+    }
+  });
+
+  // 打开外部链接：用于“学习通笔记入口”跳转（由前端按钮触发）
+  ipcMain.handle('api:openExternalUrl', async (event, { url } = {}) => {
+    try {
+      if (!url) throw new Error('URL 不能为空');
+      shell.openExternal(url);
+      return { success: true };
+    } catch (err) {
+      console.error('openExternalUrl error:', err);
+      return { success: false, error: err.message || String(err) };
     }
   });
 
