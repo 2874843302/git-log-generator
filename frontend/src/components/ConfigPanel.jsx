@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, Key, Eye, EyeOff, Save, User, Check, RefreshCw, Zap, CalendarCheck, AlertCircle } from 'lucide-react';
+import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, User, Check, Zap, CalendarCheck, AlertCircle, Bed } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfigPanel = ({ 
@@ -27,6 +27,7 @@ const ConfigPanel = ({
   onSelectAllMissingDates,
   onDeselectAllMissingDates,
   autoFillLogs,
+  onBatchLeaveSync,
   xuexitongLogUrl,
   openBranchPicker,
   openSettings,
@@ -245,6 +246,17 @@ const ConfigPanel = ({
                         <p className="text-[8px] text-amber-600 opacity-80 italic">
                           仅对<b>已勾选</b>的日期补全并同步到学习通。<b>按天补全</b>会按日期拉取 Git 记录。
                         </p>
+
+                        <button
+                          type="button"
+                          onClick={() => onBatchLeaveSync?.()}
+                          disabled={loading || selectedMissingDates.length === 0}
+                          className="w-full inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-rose-600 text-white text-[9px] font-bold hover:bg-rose-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm"
+                          title="将已勾选日期批量同步为“请假”"
+                        >
+                          <Bed size={10} />
+                          批量请假
+                        </button>
                       </div>
                     </div>
                     )}

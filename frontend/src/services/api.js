@@ -24,6 +24,7 @@ const api = {
   getTemplates: () => window.electron.invoke('api:getTemplates'),
   generateAiLog: (data) => window.electron.invoke('api:generateAiLog', data),
   chatWithAssistant: (data) => window.electron.invoke('api:chatWithAssistant', data),
+  getApiUsageStats: (data) => window.electron.invoke('api:getApiUsageStats', data),
 
   // 学习通相关
   createXuexitongNote: (data) => window.electron.invoke('api:createXuexitongNote', data),

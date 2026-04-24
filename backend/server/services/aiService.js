@@ -358,7 +358,63 @@ async function chatWithAssistant(params) {
     }
 }
 
+/**
+ * 查询 DeepSeek 账户余额与用量统计
+ */
+async function getApiUsageStats(params = {}) {
+    const apiKey = params.apiKey || process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+        throw new Error('未检测到 DeepSeek API Key，请先在设置中保存');
+    }
+
+    const response = await fetch('https://api.deepseek.com/user/balance', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        let errorMsg = `HTTP Error ${response.status}`;
+        try {
+            const errorData = await response.json();
+            errorMsg = errorData.error?.message || errorMsg;
+        } catch (e) {
+            // ignore json parse error
+        }
+        throw new Error(`查询余额失败: ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    const balanceInfos = Array.isArray(data?.balance_infos) ? data.balance_infos : [];
+
+    const statsByCurrency = balanceInfos.map((item) => {
+        const granted = Number(item.granted_balance || 0);
+        const toppedUp = Number(item.topped_up_balance || 0);
+        const total = Number((granted + toppedUp).toFixed(4));
+        const remaining = Number(item.total_balance || 0);
+        const used = Number(Math.max(0, total - remaining).toFixed(4));
+
+        return {
+            currency: item.currency || 'CNY',
+            total,
+            remaining,
+            used,
+            granted,
+            toppedUp
+        };
+    });
+
+    return {
+        isAvailable: Boolean(data?.is_available),
+        updatedAt: new Date().toISOString(),
+        statsByCurrency
+    };
+}
+
 module.exports = {
     generateAILog,
-    chatWithAssistant
+    chatWithAssistant,
+    getApiUsageStats
 };

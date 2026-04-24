@@ -80,6 +80,9 @@ const SettingsModal = ({
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
   const [testEmailStatus, setTestEmailStatus] = useState({ loading: false, result: null }); // null, 'success', 'error'
   const [testEmailError, setTestEmailError] = useState('');
+  const [apiUsage, setApiUsage] = useState(null);
+  const [apiUsageLoading, setApiUsageLoading] = useState(false);
+  const [apiUsageError, setApiUsageError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -181,6 +184,38 @@ const SettingsModal = ({
 
   const handleSaveKey = () => {
     updateApiKey(localApiKey);
+  };
+
+  const formatAmount = (value) => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '0.0000';
+    return n.toFixed(4);
+  };
+
+  const formatUpdateTime = (isoTime) => {
+    if (!isoTime) return '--';
+    const d = new Date(isoTime);
+    if (Number.isNaN(d.getTime())) return '--';
+    return d.toLocaleString();
+  };
+
+  const fetchApiUsage = async () => {
+    if (!localApiKey?.trim()) {
+      setApiUsage(null);
+      setApiUsageError('请先填写并保存 DeepSeek API Key');
+      return;
+    }
+    setApiUsageLoading(true);
+    setApiUsageError('');
+    try {
+      const result = await api.getApiUsageStats({ apiKey: localApiKey.trim() });
+      setApiUsage(result);
+    } catch (err) {
+      setApiUsage(null);
+      setApiUsageError(err.message || '查询余额失败');
+    } finally {
+      setApiUsageLoading(false);
+    }
   };
 
   const handleSaveUser = () => {
@@ -463,6 +498,62 @@ const SettingsModal = ({
                       <Check size={16} />
                       保存密钥配置
                     </button>
+
+                    <div className="bg-indigo-50/30 border border-indigo-100 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase">额度与用量统计</p>
+                        <button
+                          onClick={fetchApiUsage}
+                          disabled={apiUsageLoading}
+                          className="text-[9px] px-2 py-1 bg-white border border-indigo-200 text-indigo-600 rounded-md hover:bg-indigo-50 transition-colors flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {apiUsageLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                          刷新
+                        </button>
+                      </div>
+
+                      {apiUsageError && (
+                        <div className="text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5">
+                          {apiUsageError}
+                        </div>
+                      )}
+
+                      {apiUsage && Array.isArray(apiUsage.statsByCurrency) && apiUsage.statsByCurrency.length > 0 ? (
+                        <div className="space-y-2">
+                          {apiUsage.statsByCurrency.map((item) => (
+                            <div key={item.currency} className="bg-white border border-indigo-100 rounded-lg p-2.5">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-bold text-gray-700">{item.currency}</span>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${apiUsage.isAvailable ? 'text-green-700 bg-green-50' : 'text-amber-700 bg-amber-50'}`}>
+                                  {apiUsage.isAvailable ? '可用' : '不可用'}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                <div>
+                                  <p className="text-gray-400">当前余额</p>
+                                  <p className="font-bold text-green-600">{formatAmount(item.remaining)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-400">已用额度</p>
+                                  <p className="font-bold text-amber-600">{formatAmount(item.used)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-400">总额度</p>
+                                  <p className="font-bold text-indigo-700">{formatAmount(item.total)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          <p className="text-[9px] text-gray-400 px-0.5">
+                            最近刷新：{formatUpdateTime(apiUsage.updatedAt)}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-gray-400">
+                          点击“刷新”即可实时查看当前密钥的余额与用量。
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </section>
 

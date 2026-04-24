@@ -578,6 +578,13 @@ function registerIpcHandlers() {
     });
   });
 
+  ipcMain.handle('api:getApiUsageStats', async (event, data = {}) => {
+    return await aiService.getApiUsageStats({
+      ...data,
+      apiKey: data.apiKey || getSetting('DEEPSEEK_API_KEY')
+    });
+  });
+
   ipcMain.handle('api:createXuexitongNote', async (event, { content, title, headless = false, silentNotify = false }) => {
     console.log(`[Backend] createXuexitongNote called. headless: ${headless}, silentNotify: ${silentNotify}`);
 
@@ -705,7 +712,7 @@ function registerIpcHandlers() {
         }
       }
 
-      // 5. 进入“写笔记”页面
+      // 5. 进入“写笔记”页面（增强稳健性，减少偶发失败）
       let notePage = page;
       let foundNewBtn = false;
 
@@ -737,13 +744,13 @@ function registerIpcHandlers() {
           if (btn) {
             console.log(`定位到“写笔记”按钮，正在点击...`);
             const [newPage] = await Promise.all([
-              browserContext.waitForEvent('page', { timeout: 5000 }).catch(() => null),
+              browserContext.waitForEvent('page', { timeout: 10000 }).catch(() => null),
               btn.click()
             ]);
             if (newPage) {
               notePage = newPage;
               // 等待新页面加载一点点
-              await notePage.waitForTimeout(1000);
+              await notePage.waitForTimeout(1500);
             }
             return true;
           }
@@ -755,44 +762,57 @@ function registerIpcHandlers() {
         foundNewBtn = await fastClick(page);
       }
 
-      // 如果还没找到且不在笔记页，尝试直接 URL 跳转
+      // 如果还没找到且不在编辑页，尝试直接 URL 跳转（多入口重试）
       if (!foundNewBtn && !(await isAtEditor(page))) {
-        console.log('未进入编辑页，尝试极速跳转...');
+        console.log('未进入编辑页，尝试 URL 直达重试...');
         const currentUrl = page.url();
         const domain = currentUrl.includes('noteyd.chaoxing.com') ? 'noteyd.chaoxing.com' : 'note.chaoxing.com';
-        const jumpUrl = `https://${domain}/pc/note_notebook/jumpToAddNote`;
-        
-        try {
-          await page.goto(jumpUrl, { waitUntil: 'load', timeout: 20000 });
-          await page.waitForTimeout(1500);
-          if (await isAtEditor(page)) {
-            foundNewBtn = true;
-            notePage = page;
+        const jumpUrls = [
+          `https://${domain}/pc/note_notebook/jumpToAddNote`,
+          `https://${domain}/pc/editor`,
+          `https://${domain}/pc/note_editor`,
+        ];
+
+        for (const jumpUrl of jumpUrls) {
+          if (foundNewBtn) break;
+          try {
+            console.log(`尝试跳转编辑页: ${jumpUrl}`);
+            await page.goto(jumpUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(2000);
+            if (await isAtEditor(page)) {
+              foundNewBtn = true;
+              notePage = page;
+              break;
+            }
+          } catch (gotoError) {
+            console.warn('跳转导航出错:', gotoError.message);
           }
-        } catch (gotoError) {
-          console.warn('跳转导航出错:', gotoError.message);
         }
       }
 
-      // 最后兜底：再次检查是否真的没进去
+      // 最后兜底：再次检查是否真的没进去（增加重试轮次）
       if (!foundNewBtn && !(await isAtEditor(notePage))) {
-        console.log('执行最后兜底检查与点击...');
-        try {
-          const lastResortSelector = 'text=写笔记, .jb_btn_104, a:has-text("写笔记")';
-          await page.click(lastResortSelector, { timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(2000);
-          
-          // 检查所有打开的页面，看看有没有哪个是编辑页
-          const allPages = browserContext.pages();
-          for (const p of allPages) {
-            if (await isAtEditor(p)) {
-              notePage = p;
-              foundNewBtn = true;
-              console.log('在多页面检查中找到了编辑页');
-              break;
+        console.log('执行最后兜底检查与点击（最多 2 轮）...');
+        for (let retry = 0; retry < 2 && !foundNewBtn; retry++) {
+          try {
+            const lastResortSelector = 'text=写笔记, .jb_btn_104, a:has-text("写笔记")';
+            await page.click(lastResortSelector, { timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(2500);
+
+            // 检查所有打开的页面，看看有没有哪个是编辑页
+            const allPages = browserContext.pages();
+            for (const p of allPages) {
+              if (await isAtEditor(p)) {
+                notePage = p;
+                foundNewBtn = true;
+                console.log('在多页面检查中找到了编辑页');
+                break;
+              }
             }
+          } catch (e) {
+            // ignore and retry
           }
-        } catch (e) {}
+        }
       }
 
       // 最终判定

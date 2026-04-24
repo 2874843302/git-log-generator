@@ -178,6 +178,10 @@ function App() {
   /** 日志检查「待补全」多选，YYYYMMDD；默认与 missingLogDates 一致（全选） */
   const [selectedMissingDates, setSelectedMissingDates] = useState([]);
   const [showLatestVersionTip, setShowLatestVersionTip] = useState(false); // 控制最新版本提示的显示
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [pendingLeaveDates, setPendingLeaveDates] = useState([]);
+  const [headlessFoolModeRunning, setHeadlessFoolModeRunning] = useState(false);
+  const [headlessFoolModeText, setHeadlessFoolModeText] = useState('');
 
   useEffect(() => {
     fetchTemplates();
@@ -648,15 +652,20 @@ function App() {
   /**
    * 傻瓜模式一键生成逻辑
    */
-  const handleFoolModeGenerate = React.useCallback(async (selectedRepos, templateKey = 'concise', targetDate = null, customOptions = null, headless = false) => {
-    console.log('[傻瓜模式] 开始执行...', { selectedRepos, templateKey, targetDate, headless });
+  const handleFoolModeGenerate = React.useCallback(async (selectedRepos, templateKey = 'concise', targetDate = null, customOptions = null, headless = true) => {
+    // 产品约定：傻瓜模式始终走无头同步，避免前台页面干扰
+    const effectiveHeadless = true;
+    console.log('[傻瓜模式] 开始执行...', { selectedRepos, templateKey, targetDate, headless: effectiveHeadless });
     setFoolModeOpen(false);
+    setHeadlessFoolModeRunning(true);
+    setHeadlessFoolModeText('傻瓜模式（无头）后台执行中...');
     
     // 1. 设置基础状态
     const today = targetDate || dayjs().format('YYYY-MM-DD');
     
-    // 如果是定时任务触发（headless模式），先检查今天是否已有日志
-    if (headless) {
+    // 傻瓜模式固定无头：先检查今天是否已有日志
+    if (effectiveHeadless) {
+      setHeadlessFoolModeText('正在检查今日日志是否已存在...');
       console.log(`[定时任务] 正在检查 ${today} 是否已存在日志...`);
       setLoading(true);
       try {
@@ -703,6 +712,7 @@ function App() {
 
     // 2. 获取日志
     console.log('[傻瓜模式] 正在获取 Git 日志...', { today, author: defaultUser, selectedRepos });
+      setHeadlessFoolModeText('正在后台拉取 Git 提交...');
     
     setLoading(true);
     setError('');
@@ -735,12 +745,14 @@ function App() {
       // 3. 如果有日志或有补充内容，调用 AI 生成
       if (fetchedLogs.length > 0 || hasSupplement) {
         console.log(`[傻瓜模式] 准备调用 AI 生成 (日志: ${fetchedLogs.length}条, 补充内容开启: ${isSupplementEnabled})`);
+        setHeadlessFoolModeText('正在后台调用 AI 生成日志...');
         
         const content = await generateLog(fetchedLogs, templateKey, selectedRepos, foolModeOptions);
         
         if (content) {
           console.log('[傻瓜模式] AI 生成完成，开始自动同步学习通...');
-          await handleSyncToXuexitong(content, true, today, headless);
+          setHeadlessFoolModeText('正在后台无头同步到学习通...');
+          await handleSyncToXuexitong(content, true, today, effectiveHeadless);
         } else {
           console.warn('[傻瓜模式] AI 生成内容为空，取消同步');
           api.showNotification({
@@ -769,6 +781,8 @@ function App() {
       playNotificationSound('failure');
     } finally {
       setLoading(false);
+      setHeadlessFoolModeRunning(false);
+      setHeadlessFoolModeText('');
     }
   }, [defaultUser, generateLog, handleSyncToXuexitong]);
 
@@ -884,6 +898,62 @@ function App() {
     } finally {
       setCheckingLogs(false);
     }
+  };
+
+  const executeBatchLeaveSync = async (datesToLeave) => {
+    if (!Array.isArray(datesToLeave) || datesToLeave.length === 0) return;
+    setLoading(true);
+    setError('');
+    const results = [];
+
+    try {
+      for (const missingDate of datesToLeave) {
+        const formattedDate = `${missingDate.substring(0, 4)}-${missingDate.substring(4, 6)}-${missingDate.substring(6, 8)}`;
+        const result = await handleSyncToXuexitong('请假', true, formattedDate, true, true);
+        results.push({ ...result, missingDate });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      const successDates = results.filter((r) => r?.success).map((r) => r.missingDate);
+      const failed = results.filter((r) => !r?.success);
+
+      if (successDates.length > 0) {
+        setMissingLogDates((prev) => (Array.isArray(prev) ? prev.filter((d) => !successDates.includes(d)) : prev));
+        setSelectedMissingDates((prev) => prev.filter((d) => !successDates.includes(d)));
+      }
+
+      api.showNotification({
+        title: '批量请假完成',
+        body: `成功 ${successDates.length} 天，失败 ${failed.length} 天`,
+        silent: false
+      });
+
+      playNotificationSound(successDates.length > 0 ? 'success' : 'failure');
+    } catch (err) {
+      setError(err?.message || '批量请假失败');
+      playNotificationSound('failure');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * 批量请假：将已勾选缺失日期同步为固定内容“请假”
+   */
+  const handleBatchLeaveSync = async () => {
+    if (loading || !missingLogDates || missingLogDates.length === 0) return;
+
+    const datesToLeave = selectedMissingDates
+      .filter((d) => missingLogDates.includes(d))
+      .sort();
+
+    if (datesToLeave.length === 0) {
+      setError('请至少选中一天需要请假的日期');
+      return;
+    }
+
+    setPendingLeaveDates(datesToLeave);
+    setLeaveConfirmOpen(true);
   };
 
   const fetchConfig = async () => {
@@ -1273,6 +1343,7 @@ function App() {
             }}
             onDeselectAllMissingDates={() => setSelectedMissingDates([])}
             autoFillLogs={handleAutoFillLogs}
+            onBatchLeaveSync={handleBatchLeaveSync}
             openBranchPicker={(pos) => {
               setBranchPickerOpen(true);
               setBranchPickerPos(pos);
@@ -1344,7 +1415,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.5.5</span>
+                  <span>Version 2.5.6</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
@@ -1413,6 +1484,15 @@ function App() {
                <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-ping"></div>
                  处理中...
+               </div>
+             )}
+
+             {headlessFoolModeRunning && (
+               <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-full">
+                 <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                 <span className="text-[11px] text-indigo-700 font-medium">
+                   {headlessFoolModeText || '无头模式后台运行中...'}
+                 </span>
                </div>
              )}
 
@@ -1628,6 +1708,67 @@ function App() {
                       </p>
                     </>
                   )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 批量请假确认弹窗 */}
+      <AnimatePresence>
+        {leaveConfirmOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
+                    <AlertCircle className="w-6 h-6 text-rose-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">确认批量请假</h3>
+                    <p className="text-xs text-gray-500">将以下日期同步为固定内容“请假”</p>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 max-h-32 overflow-y-auto mb-4">
+                  <p className="font-medium mb-1">共 {pendingLeaveDates.length} 天：</p>
+                  <div className="text-xs leading-6">
+                    {pendingLeaveDates.map((d) => `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}`).join('、')}
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setLeaveConfirmOpen(false);
+                      setPendingLeaveDates([]);
+                    }}
+                    className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const dates = [...pendingLeaveDates];
+                      setLeaveConfirmOpen(false);
+                      setPendingLeaveDates([]);
+                      await executeBatchLeaveSync(dates);
+                    }}
+                    className="flex-1 px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 shadow-lg shadow-rose-200 transition-all"
+                  >
+                    确认请假
+                  </button>
                 </div>
               </div>
             </motion.div>
