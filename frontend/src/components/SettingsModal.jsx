@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar, Type, Mail } from 'lucide-react';
+import { X, Folder, Key, RefreshCw, Loader2, Check, Settings, ShieldCheck, AlertCircle, Eye, EyeOff, User, Share2, ChevronDown, ChevronUp, Volume2, Play, Clock, Calendar, Type, Mail, Cpu } from 'lucide-react';
 
 const SettingsModal = ({ 
   isOpen, 
@@ -20,6 +20,8 @@ const SettingsModal = ({
   updateXuexitongPassword,
   browserPath,
   updateBrowserPath,
+  deepseekModel,
+  updateDeepseekModel,
   notificationSoundEnabled,
   updateNotificationSoundEnabled,
   successSound,
@@ -32,6 +34,8 @@ const SettingsModal = ({
   updateScheduleTime,
   cnHolidayCalendarEnabled,
   updateCnHolidayCalendarEnabled,
+  dailyIncludeHours,
+  updateDailyIncludeHours,
   titleTemplate,
   updateTitleTemplate,
   emailAddress,
@@ -62,6 +66,7 @@ const SettingsModal = ({
   const [localXuexitongUsername, setLocalXuexitongUsername] = useState(xuexitongUsername);
   const [localXuexitongPassword, setLocalXuexitongPassword] = useState(xuexitongPassword);
   const [localBrowserPath, setLocalBrowserPath] = useState(browserPath);
+  const [localDeepseekModel, setLocalDeepseekModel] = useState(deepseekModel);
   const [localScheduleTime, setLocalScheduleTime] = useState(scheduleTime);
   const [localTitleTemplate, setLocalTitleTemplate] = useState(titleTemplate);
   const [localEmailAddress, setLocalEmailAddress] = useState(emailAddress || '');
@@ -128,6 +133,10 @@ const SettingsModal = ({
   useEffect(() => {
     setLocalBrowserPath(browserPath);
   }, [browserPath]);
+
+  useEffect(() => {
+    setLocalDeepseekModel(deepseekModel);
+  }, [deepseekModel]);
 
   useEffect(() => {
     setLocalScheduleTime(scheduleTime);
@@ -499,6 +508,36 @@ const SettingsModal = ({
                       保存密钥配置
                     </button>
 
+                    {/* DeepSeek V4 模型选择 */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5">
+                        <Cpu size={11} />
+                        AI 模型选择 (DeepSeek V4)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={localDeepseekModel}
+                          onChange={(e) => {
+                            setLocalDeepseekModel(e.target.value);
+                            updateDeepseekModel(e.target.value);
+                          }}
+                          className="flex-1 px-4 py-2.5 bg-white border border-indigo-100 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 appearance-none cursor-pointer"
+                        >
+                          <option value="deepseek-v4-flash">V4-Flash（快速·低成本）</option>
+                          <option value="deepseek-v4-pro">V4-Pro（高质量·高成本）</option>
+                        </select>
+                      </div>
+                      <div className="bg-indigo-50/40 border border-indigo-50 rounded-lg px-3 py-2">
+                        <p className="text-[9px] text-gray-500 leading-relaxed">
+                          {localDeepseekModel === 'deepseek-v4-pro' ? (
+                            <><b>V4-Pro</b>：适合述职报告、KPI 自述等复杂场景，推理更深，价格约为 Flash 的 3 倍。</>
+                          ) : (
+                            <><b>V4-Flash</b>：日常日志生成推荐，速度快、成本低。聊天助手自动启用 thinking 模式。</>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
                     <div className="bg-indigo-50/30 border border-indigo-100 rounded-xl p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] font-bold text-indigo-600 uppercase">额度与用量统计</p>
@@ -699,6 +738,25 @@ const SettingsModal = ({
                       >
                         <motion.div
                           animate={{ x: cnHolidayCalendarEnabled ? 22 : 2 }}
+                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                        />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 mt-1 border-t border-indigo-100/70">
+                      <div className="space-y-1 pr-2">
+                        <span className="text-[11px] font-bold text-gray-700 block">日志显示时间分配</span>
+                        <p className="text-[9px] text-gray-500 leading-snug">
+                          开启：日常日报组标题带 --Xh 耗时且合计强制 8 小时；关闭：组标题仅显示“已完成/进行中”
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateDailyIncludeHours(!dailyIncludeHours)}
+                        className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${dailyIncludeHours ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <motion.div
+                          animate={{ x: dailyIncludeHours ? 22 : 2 }}
                           className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
                         />
                       </button>

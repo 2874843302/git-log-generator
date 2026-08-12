@@ -13,6 +13,7 @@ const MarkdownPreview = ({ generatedLog, onSyncToXuexitong }) => {
     if (!md) return '';
     return md
       .replace(/^#+\s+/gm, '') // 移除标题符号
+      .replace(/\\([.、．])/g, '$1') // 还原转义的序号点号
       .replace(/(\*\*|__)(.*?)\1/g, '$2') // 移除粗体
       .replace(/(\*|_)(.*?)\1/g, '$2') // 移除斜体
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 移除链接，保留文本

@@ -13,8 +13,8 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
   const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [supplement, setSupplement] = useState('');
   const [options, setOptions] = useState({
-    includeProblems: true,
-    includeReflections: true,
+    includeProblems: false,
+    includeReflections: false,
     includeDiffContent: true,
     includeTomorrow: false
   });
@@ -344,32 +344,18 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
 
               {/* 操作按钮 */}
               <div className="pt-2 space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    disabled={selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())}
-                    onClick={() => onGenerate(selectedRepos, 'concise', selectedDate, { ...options, supplementPrompt: supplement })}
-                    className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                      selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 shadow-lg shadow-blue-500/10'
-                    }`}
-                  >
-                    <Zap size={16} className="fill-blue-600" />
-                    立即生成极简日志
-                  </button>
-                  <button
-                    disabled={selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())}
-                    onClick={() => onGenerate(selectedRepos, 'daily', selectedDate, { ...options, supplementPrompt: supplement })}
-                    className={`py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                      selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/30 hover:shadow-blue-500/40 hover:-translate-y-0.5'
-                    }`}
-                  >
-                    <Zap size={16} className="fill-white" />
-                    立即生成普通日报
-                  </button>
-                </div>
+                <button
+                  disabled={selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())}
+                  onClick={() => onGenerate(selectedRepos, 'daily', selectedDate, { ...options, supplementPrompt: supplement })}
+                  className={`w-full py-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                    selectedRepos.length === 0 && (!options.includeTomorrow || !supplement.trim())
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/30 hover:shadow-blue-500/40 hover:-translate-y-0.5'
+                  }`}
+                >
+                  <Zap size={16} className="fill-white" />
+                  立即生成工作日志并同步
+                </button>
                 <p className="text-center text-[10px] text-gray-400 mt-4 font-medium">
                   点击后将自动：<span className="text-gray-600">设置今日日期</span> → <span className="text-gray-600">选中默认用户</span> → <span className="text-gray-600">提取代码变更</span> → <span className="text-gray-600">AI 生成报告</span>
                 </p>

@@ -88,6 +88,51 @@ async function closeBrowser() {
   }
 }
 
+/**
+ * 统一系统通知：点击通知跳转学习通笔记首页（或指定 URL）
+ */
+function showAppNotification({ title, body, silent = false, openUrl }) {
+  try {
+    const png = path.resolve(__dirname, '../frontend/public/favicon.png');
+    const note = new Notification({
+      title,
+      body,
+      silent,
+      icon: fs.existsSync(png) ? png : undefined
+    });
+    note.on('click', () => {
+      const url = openUrl || getSetting('XUEXITONG_LOG_CHECK_URL') || 'https://note.chaoxing.com/pc/index';
+      Promise.resolve(shell.openExternal(url)).catch((e) => console.error('打开笔记首页失败:', e));
+    });
+    note.show();
+    return true;
+  } catch (err) {
+    console.error('Notification Error:', err);
+    return false;
+  }
+}
+
+/**
+ * 将学习通同步/检查类错误翻译为用户可理解、可操作的描述
+ */
+function humanizeXuexitongError(error, scene) {
+  const msg = error && error.message ? String(error.message) : String(error);
+  const short = msg.length > 60 ? `${msg.slice(0, 60)}…` : msg;
+  if (/timeout|timed out|waiting for/i.test(msg)) {
+    return `${scene}超时：学习通页面在规定时间内未响应，通常为网络不稳定或页面加载慢，请检查网络后重试（${short}）`;
+  }
+  if (/executable|launch|browser/i.test(msg)) {
+    return `${scene}时浏览器启动失败：设置中的浏览器路径可能无效，建议在设置中清空浏览器路径或指向本地 Chrome/Edge（${short}）`;
+  }
+  if (/login|sign in|password|账号|密码/i.test(msg)) {
+    return `${scene}登录异常：请检查设置中的学习通账号密码是否正确、账号是否被风控（${short}）`;
+  }
+  if (/net::|ECONN|ENOTFOUND|network/i.test(msg)) {
+    return `${scene}网络连接失败：无法访问超星服务器，请确认网络可用后重试（${short}）`;
+  }
+  return `${scene}失败：${short}。可点击通知跳转笔记首页手动核对`;
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('api:getAppVersion', async () => {
     try {
@@ -318,7 +363,7 @@ function registerIpcHandlers() {
 
     } catch (error) {
       console.error('检查学习通日志失败:', error);
-      throw new Error('检查失败: ' + error.message);
+      throw new Error(humanizeXuexitongError(error, '检查'));
     } finally {
         // 不再每次检查都关闭浏览器，改为保持实例运行
         // if (headless) {
@@ -414,12 +459,14 @@ function registerIpcHandlers() {
       LAST_SELECTED_REPOS: '',
       FOOL_MODE_SELECTED_REPOS: '',
       BROWSER_PATH: '',
+      DEEPSEEK_MODEL: 'deepseek-v4-flash',
       NOTIFICATION_SOUND_ENABLED: 'true',
       SUCCESS_SOUND: 'yeah.mp3',
       FAILURE_SOUND: '啊咧？.mp3',
       SCHEDULE_ENABLED: 'false',
       SCHEDULE_TIME: '18:00',
       TITLE_TEMPLATE: '工作日志-{date-hyphen}',
+      DAILY_INCLUDE_HOURS: 'true',
       EMAIL_ADDRESS: '',
       DAILY_EMAIL_ENABLED: 'false',
       WEEKLY_EMAIL_ENABLED: 'false',
@@ -535,6 +582,18 @@ function registerIpcHandlers() {
     return { logs: allLogs };
   });
 
+  ipcMain.handle('api:enrichGitLogs', async (event, { logs, repoPaths, includeDiffContent = false }) => {
+    const repoPathsMap = {};
+    repoPaths.forEach(repoPath => {
+      const repoName = repoPath.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+      repoPathsMap[repoName] = repoPath;
+    });
+
+    return {
+      logs: await gitService.enrichLogs(repoPathsMap, logs, includeDiffContent)
+    };
+  });
+
   // AI 相关
   ipcMain.handle('api:getTemplates', async () => {
     return templates;
@@ -565,6 +624,7 @@ function registerIpcHandlers() {
     return await aiService.generateAILog({
       ...data,
       logs: enrichedLogs,
+      model: getSetting('DEEPSEEK_MODEL') || 'deepseek-v4-flash',
       titleTemplate: getSetting('TITLE_TEMPLATE') || '',
       repoAliases
     });
@@ -574,7 +634,8 @@ function registerIpcHandlers() {
   ipcMain.handle('api:chatWithAssistant', async (event, data) => {
     return await aiService.chatWithAssistant({
       ...data,
-      apiKey: getSetting('DEEPSEEK_API_KEY')
+      apiKey: getSetting('DEEPSEEK_API_KEY'),
+      model: getSetting('DEEPSEEK_MODEL') || 'deepseek-v4-flash'
     });
   });
 
@@ -587,13 +648,6 @@ function registerIpcHandlers() {
 
   ipcMain.handle('api:createXuexitongNote', async (event, { content, title, headless = false, silentNotify = false }) => {
     console.log(`[Backend] createXuexitongNote called. headless: ${headless}, silentNotify: ${silentNotify}`);
-
-    // 获取通知图标的可靠路径
-     const getNotifyIcon = () => {
-       const png = path.resolve(__dirname, '../frontend/public/favicon.png');
-       if (fs.existsSync(png)) return png;
-       return undefined;
-     };
 
     const targetUrl = process.env.XUEXITONG_LOG_CHECK_URL || 'https://note.chaoxing.com/pc/index';
     const username = process.env.XUEXITONG_USERNAME;
@@ -959,41 +1013,28 @@ function registerIpcHandlers() {
       await page.close().catch(() => {});
 
       if (!silentNotify) {
-        new Notification({
+        showAppNotification({
           title: 'Git Log AI',
-          body: `同步成功：${title}`,
-          icon: getNotifyIcon()
-        }).show();
+          body: `同步成功：${title}`
+        });
       }
 
       return { success: true };
     } catch (error) {
       console.error('学习通同步失败:', error);
-      throw new Error('同步失败: ' + error.message);
+      throw new Error(humanizeXuexitongError(error, '同步'));
     }
   });
 
   // 系统通知相关
   ipcMain.handle('api:showNotification', async (event, data) => {
-    try {
-      // 获取通知图标的可靠路径
-       const getNotifyIcon = () => {
-         const png = path.resolve(__dirname, '../frontend/public/favicon.png');
-         if (fs.existsSync(png)) return png;
-         return undefined;
-       };
-
-      new Notification({ 
-        title: data.title, 
-        body: data.body, 
-        silent: data.silent || false,
-        icon: getNotifyIcon()
-      }).show();
-      return { success: true };
-    } catch (err) {
-      console.error('Notification Error:', err);
-      return { success: false, error: err.message };
-    }
+    const ok = showAppNotification({
+      title: data.title,
+      body: data.body,
+      silent: data.silent || false,
+      openUrl: data.openUrl
+    });
+    return ok ? { success: true } : { success: false, error: '通知显示失败' };
   });
 
   // 打开外部链接：用于“学习通笔记入口”跳转（由前端按钮触发）

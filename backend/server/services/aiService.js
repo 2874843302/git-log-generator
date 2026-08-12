@@ -1,12 +1,78 @@
 const { templates } = require('../constants/templates');
 
 /**
+ * DeepSeek V4 可选模型列表
+ * - deepseek-v4-flash: 快速、低成本（适合日常日志生成）
+ * - deepseek-v4-pro: 高质量、高成本（适合复杂分析/述职等场景）
+ */
+const DEEPSEEK_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro'];
+const DEFAULT_MODEL = 'deepseek-v4-flash';
+
+/**
+ * daily 模版输出格式兜底归一化（不依赖模型自觉）：
+ * 1. 去除空行与 Markdown 标题/列表/加粗标记；
+ * 2. 组标题统一重编号为“N. 项目名: 状态--Xh”；
+ * 3. 八小时制兜底：合计不足/超出 8h 时在最后一组补齐差值；
+ * 4. 每行之间空一行，确保 Markdown 渲染后各自独立成段。
+ */
+function normalizeDailyLog(content, includeHours = true) {
+    if (!content) return content;
+    const headerRe = /^(?:\d+\s*[.、．]\s*)?(.+?)\s*[:：]\s*(已完成|进行中)(?:\s*-{1,2}\s*(\d+)\s*h)?$/;
+    const lines = content
+        .split(/\r?\n/)
+        // 行内粘连拆分：在“类别:”或“组标题(状态--Xh)”边界处强制换行
+        // 注意：(?<![.、．]) 保护组标题内部“N. 项目名”之间的空格不被切断
+        .flatMap((l) => l
+            .replace(/[ \t]+(?=(?:功能优化|需求处理|定制处理|问题处理|配置处理|pm处理|临时工作)[:：])/g, '\n')
+            .replace(/(?<![.、．])[ \t]+(?=(?:\d+[.、．]\s*)?[\u4e00-\u9fa5A-Za-z0-9_-]+[:：]\s*(?:已完成|进行中)(?:\s*-{1,2}\s*\d+h)?)/g, '\n')
+            .split('\n'))
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0)
+        .map((l) => l
+            .replace(/^#{1,6}\s+/, '')
+            .replace(/^[-*+]\s+/, '')
+            .replace(/^\*\*(.+)\*\*$/, '$1'));
+
+    // 组标题重编号并提取耗时
+    let counter = 0;
+    const parsed = lines.map((l) => {
+        const m = l.match(headerRe);
+        if (!m) return { text: l, header: false };
+        counter += 1;
+        return { header: true, name: m[1], status: m[2], hours: m[3] ? parseInt(m[3], 10) : 0, no: counter };
+    });
+
+    // 八小时制兜底：合计不等于 8 时调整最后一组（仅在开启时间分配时）
+    const headers = parsed.filter((p) => p.header);
+    if (includeHours && headers.length > 0) {
+        const total = headers.reduce((s, p) => s + p.hours, 0);
+        if (total !== 8) {
+            const last = headers[headers.length - 1];
+            const fixed = last.hours + (8 - total);
+            if (fixed >= 1) last.hours = fixed;
+        }
+    }
+
+    return parsed
+        // 组标题编号转义为“N\.”，避免被 Markdown/编辑器解析为有序列表导致序号错乱
+        .map((p) => {
+            if (!p.header) return p.text;
+            return includeHours
+                ? `${p.no}\\. ${p.name}: ${p.status}--${p.hours}h`
+                : `${p.no}\\. ${p.name}: ${p.status}`;
+        })
+        .join('\n\n');
+}
+
+/**
  * 组装 AI Prompt 并调用 API 生成日志
  */
 async function generateAILog(params) {
     const { logs, templateKey, customPrompt, tomorrowPlanPrompt, referenceLog, options, repoPaths } = params;
     // 优先使用传入的 apiKey，否则从环境变量获取
     const apiKey = params.apiKey || process.env.DEEPSEEK_API_KEY;
+    // 模型选择：优先使用传入的 model，其次从环境变量读取，最后使用默认值
+    const model = params.model || process.env.DEEPSEEK_MODEL || DEFAULT_MODEL;
     let titleTemplate = params.titleTemplate || process.env.TITLE_TEMPLATE;
 
     // 处理标题日期：如果包含日期占位符，取提交记录中的日期
@@ -45,7 +111,11 @@ ${referenceLog}
     }
 
     // 2. 根据选项添加要求 (仅在非自定义模式下强制注入板块，或者作为补充)
-    if (options && templateKey !== 'custom') {
+    // daily 模版采用公司规范的分条格式，板块由模版自身控制，跳过通用 ### 板块注入
+    const isDaily = templateKey === 'daily';
+    // 全局配置：日志是否显示时间分配（--Xh 与 8 小时制）
+    const includeHours = !(process.env.DAILY_INCLUDE_HOURS === 'false' || process.env.DAILY_INCLUDE_HOURS === false);
+    if (options && templateKey !== 'custom' && !isDaily) {
         const requirements = [];
         const isWeekly = templateKey === 'weekly';
         const isConcise = templateKey === 'concise';
@@ -105,6 +175,16 @@ ${conciseSuffix}列表从 1. 开始计数。`;
         }
     }
 
+    // daily 模版：用户补充的非代码素材（会议、临时事务等）归入“临时工作”组
+    if (isDaily && tomorrowPlanPrompt) {
+        templatePrompt += `\n**用户提供的非代码类补充素材（归入“临时工作”组）**：${tomorrowPlanPrompt}`;
+    }
+
+    // daily 模版：关闭时间分配时，覆盖结构/示例中关于耗时的描述
+    if (isDaily && !includeHours) {
+        templatePrompt += `\n**特别要求（用户全局设置：不显示时间分配）**：组标题不含耗时，格式为“N. 项目名: 状态”；上述结构与示例中任何关于 --Xh 耗时、8 小时合计的描述均不遵循。`;
+    }
+
     // 3. 准备日志上下文
     const hasLogs = logs && logs.length > 0;
     const includeTomorrow = options?.includeTomorrow;
@@ -114,25 +194,50 @@ ${conciseSuffix}列表从 1. 开始计数。`;
     
     let logContext = '';
     if (hasLogs) {
-        logContext = `以下是来自多个项目的提交记录详情。请注意：在生成日志时，**必须为每个项目使用独立的二级或三级标题（如 ### 项目名）来突出显示**，并在此标题下汇总该项目的内容。
+        const aliasTable = Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> 中文别名: ${alias}`).join('\n');
+        const logDetails = logs.map(l => {
+            const displayName = repoAliases[l.repoName] || l.repoName;
+            return `- [项目:${displayName}] ${l.date} [${l.author_name}]: ${l.message}\n  [变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`;
+        }).join('\n');
+        logContext = isDaily
+            ? `以下是来自多个项目的提交记录详情。请按项目分组生成编号组；组标题的项目名**必须**使用中文别名（如有），严禁使用原始项目名；同一项目内相同功能或同一问题的多次提交合并为一条工作条目。
+
+项目别名对照表：
+${aliasTable}
+
+提交记录详情：\n${logDetails}`
+            : `以下是来自多个项目的提交记录详情。请注意：在生成日志时，**必须为每个项目使用独立的二级或三级标题（如 ### 项目名）来突出显示**，并在此标题下汇总该项目的内容。
 **强制要求**：如果项目有中文别名（如下表所示），你**必须**使用该中文别名作为项目的标题，严禁使用原始项目名。
 
 项目别名对照表：
-${Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> 中文别名: ${alias}`).join('\n')}
+${aliasTable}
 
-提交记录详情：\n${logs.map(l => {
-            const displayName = repoAliases[l.repoName] || l.repoName;
-            return `- [项目:${displayName}] ${l.date} [${l.author_name}]: ${l.message}\n  [变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`;
-        }).join('\n')}`;
+提交记录详情：\n${logDetails}`;
     } else {
         if (includeTomorrow && tomorrowPlanPrompt) {
-            logContext = "当前没有任何 Git 提交记录。请完全跳过“今日完成工作”等与代码提交相关的板块。请直接根据【补充内容】中的素材进行扩充和润色，生成一份连贯、专业的技术日志。";
+            logContext = isDaily
+                ? "当前没有任何 Git 提交记录。请跳过项目分组，仅根据补充素材生成“临时工作”组。"
+                : "当前没有任何 Git 提交记录。请完全跳过“今日完成工作”等与代码提交相关的板块。请直接根据【补充内容】中的素材进行扩充和润色，生成一份连贯、专业的技术日志。";
         } else {
-            logContext = "当前没有任何 Git 提交记录，且未提供任何补充素材。请生成一份简短的说明，表示今日无代码提交记录。";
+            logContext = isDaily
+                ? "当前没有任何 Git 提交记录，且未提供任何补充素材。请仅输出一行：今日无工作日志内容。"
+                : "当前没有任何 Git 提交记录，且未提供任何补充素材。请生成一份简短的说明，表示今日无代码提交记录。";
         }
     }
 
-    const prompt = `${templatePrompt}${customPrompt ? `\n附加要求：${customPrompt}` : ''}\n\n${logContext}
+    const dailyRules = `
+
+**严格遵循以下写作规范**：
+1. **内容真实性（核心）**：所有描述必须基于提供的提交记录或补充素材，严禁编造项目、事项或进度。
+2. **只输出日志正文**：严禁出现 ### 标题、加粗、缩进、开场白、总结语；严禁出现“Git”、“提交记录”、“基于以上”等字眼。
+3. **同类合并**：同一功能、同一模块或同一问题的多次提交合并为一条工作条目，禁止按提交条数机械拆分。
+4. **客观简短**：每条一句话陈述实际工作事项；禁止提及文件名、函数名、代码行数；禁止“提升了性能”、“增强了稳定性”等空泛评价。
+5. 所有行顶格输出，组标题序号从 1. 开始连续编号。
+${includeHours ? '6. **八小时制（强制）**：所有组标题耗时（--Xh，含“临时工作”组）合计必须恰好等于 8h，不得多也不得少。\n' : ''}7. **独立成行（强制）**：组标题行与每条工作条目行之间必须空一行，渲染后耗时与工作描述不得出现在同一行。
+8. **内容不足时**：提交较少时把真实工作按开发流程展开（需求梳理、方案设计、编码、自测修复、联调验收、文档整理）成多条条目；仍不足补 1-2 条“学习了XXXX”的 AI 前沿学习项（自行选取当前前沿方向，如 Agent 编排/RAG/多模态/AI 编码协作/提示词工程/轻量微调等），再不足补会议/环境维护等例行项；严禁虚构不存在的项目或业务。
+9. **多样化（强制）**：禁止一件事占满全天；单个组耗时超过 4h 时组内至少拆出 3 条不同工作条目。`;
+
+    const genericRules = `
 
 **严格遵循以下写作规范**：
 1. **内容真实性（核心）**：
@@ -157,6 +262,8 @@ ${Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> �
    - 使用 ### 作为板块标题。
    - 父级使用有序列表（1. 2. 3.），子级使用无序列表（ - ）且**严禁使用任何缩进**，所有列表项必须顶格。`;
 
+    const prompt = `${templatePrompt}${customPrompt ? `\n附加要求：${customPrompt}` : ''}\n\n${logContext}${isDaily ? dailyRules : genericRules}`;
+
     const businessFirstPrompt = templateKey === 'briefing'
         ? `\n\n**述职补充约束（面向领导，强制）**：
 1. 默认读者不懂技术，必须用业务语言表达“我负责什么 -> 我做了什么 -> 带来什么结果”。
@@ -167,9 +274,9 @@ ${Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> �
 6. 禁止写代码实现细节；结尾必须给出下一阶段计划与资源诉求（如跨团队配合、排期、依赖支持）。`
         : '';
 
-    // 4. 调用 API
+    // 4. 调用 API（DeepSeek V4）
     try {
-        console.log('正在调用 DeepSeek API...', { model: 'deepseek-chat', logCount: logs.length });
+        console.log('正在调用 DeepSeek V4 API...', { model, logCount: logs.length });
         const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -177,32 +284,34 @@ ${Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> �
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'deepseek-chat',
+                model,
+                // 日志生成是文本变换任务，关闭 thinking 以提升速度、降低成本
+                thinking: { type: 'disabled' },
                 messages: [
                     { 
                         role: 'system', 
-                        content: `你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下完成总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。
+                        content: isDaily ? `你是一个严谨的软件工程师，擅长把零散的 Git 提交记录转化为分条、清晰、完整全面的工作日志，让人一眼看出当日工作内容及完成进度。直接输出日志正文，不包含任何开场白、解释、Markdown 标题或加粗。` : `你是一个资深的软件项目经理，擅长将零散的 Git 提交记录转化为结构清晰、专业严谨的工作汇报。你会深入理解代码变动的意图，在不编造事实的前提下完成总结。你对 Markdown 格式要求极其严苛，尤其是列表的层级关系。
 
 **核心约束（强制执行）**：
-1. **标题规范**：严禁使用“明日计划”或“补充内容”作为固定标题。必须根据内容动态总结 ### [专业标题]。
-2. **无素材不标题**：如果没有 Git 提交记录，严禁出现“今日工作”等标题；如果没有遇到问题，严禁出现“遇到问题”等标题。
+1. **标题规范**：严禁使用"明日计划"或"补充内容"作为固定标题。必须根据内容动态总结 ### [专业标题]。
+2. **无素材不标题**：如果没有 Git 提交记录，严禁出现"今日工作"等标题；如果没有遇到问题，严禁出现"遇到问题"等标题。
 3. **内容润色与描述规范**：
-   - **陈述事实，去除“AI味”**：严禁使用“完成了...，以...”、“通过...，实现了...”等固定句式。禁止使用任何总结性、修饰性、赞美性的词汇。**必须直接、客观地陈述功能实现**。
+   - **陈述事实，去除"AI味"**：严禁使用"完成了...，以..."、"通过...，实现了..."等固定句式。禁止使用任何总结性、修饰性、赞美性的词汇。**必须直接、客观地陈述功能实现**。
    - **宏观化描述**：
      - **禁止提及文件名与函数名**：严禁在描述中指明具体的文件路径或代码位置。
      - **禁止描述低层级代码改动**：严禁提及具体的代码实现细节（如：修改了某行、增加了某个判断）。
      - **功能逻辑导向**：应将代码变动总结为对功能模块的影响或业务逻辑的实现方式。
    - **同类功能必须合并**：同一功能、同一模块或同一目标下的多处变更只能写**一条**汇总描述，禁止拆成多项并列；只有不同功能目标才可分列。
-   - **禁止伪量化**：严禁编造文件数量、代码行数、性能指标等虚假数据；若无明确数据可用“效率提升、流程更顺畅、风险可控”等定性业务结果表达。
+   - **禁止伪量化**：严禁编造文件数量、代码行数、性能指标等虚假数据；若无明确数据可用"效率提升、流程更顺畅、风险可控"等定性业务结果表达。
    - 对于用户提供的素材，进行专业化的润色，但严禁生硬罗列。将其描述为连贯的技术开发流程。
 4. **述职场景附加规则（当用户选择述职模板时）**：
    - 默认读者是管理者而非技术同学，优先使用业务语言，不使用代码术语堆砌。
    - 重点回答三件事：你负责什么、你做成了什么、对业务有什么价值。
    - 必须额外回答第四件事：给公司带来了什么价值，并单独成段或成标题展示。
-   - 允许并鼓励描述业务价值和管理价值，不要只写“做了哪些开发动作”。
+   - 允许并鼓励描述业务价值和管理价值，不要只写"做了哪些开发动作"。
 5. **格式规范（强制）**：
    - 直接输出 Markdown 内容，不要包含任何开场白或总结。
-   - 严禁出现“基于 Git 记录”等说明性文字。
+   - 严禁出现"基于 Git 记录"等说明性文字。
    - **所有列表项（有序或无序）必须左侧顶格，严禁使用任何空格或缩进**。` 
                     },
                     { role: 'user', content: `${prompt}${businessFirstPrompt}` }
@@ -236,7 +345,8 @@ ${Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> �
 
         const content = data.choices[0].message.content;
         console.log('AI 生成成功，内容长度:', content?.length);
-        return { content: content || '' };
+        // daily 模版做格式兜底归一化（编号/空行/8小时制），其余模版原样返回
+        return { content: isDaily ? normalizeDailyLog(content, includeHours) : (content || '') };
     } catch (error) {
         console.error('AI Service 捕获到异常:', error);
         throw error;
@@ -249,6 +359,7 @@ ${Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> �
 async function chatWithAssistant(params) {
     const { messages, apiKey: userApiKey } = params;
     const apiKey = userApiKey || process.env.DEEPSEEK_API_KEY;
+    const model = params.model || process.env.DEEPSEEK_MODEL || DEFAULT_MODEL;
 
     if (!apiKey) {
         throw new Error('未检测到 DeepSeek API Key，请在设置中配置后再试');
@@ -262,11 +373,14 @@ async function chatWithAssistant(params) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'deepseek-chat',
+                model,
+                // 聊天助手开启 thinking 模式以提升工具调用准确性
+                thinking: { type: 'enabled' },
+                reasoning_effort: 'high',
                 messages: [
                     { 
                         role: 'system', 
-                        content: `你是“小飞”，一个集成在 Git 工作日志自动生成工具中的 AI 助手。
+                        content: `你是"小飞"，一个集成在 Git 工作日志自动生成工具中的 AI 助手。
 你的主要职责是：
 1. 辅助用户使用该应用（解答关于 Git 提交、日志生成、学习通同步等功能的问题）。
 2. 提供专业的技术建议和日志润色建议。
@@ -350,7 +464,9 @@ async function chatWithAssistant(params) {
         
         return { 
             content: message.content || '',
-            tool_calls: message.tool_calls || null
+            tool_calls: message.tool_calls || null,
+            // V4 thinking 模式下返回 reasoning_content，前端可用于展示思考过程
+            reasoning_content: message.reasoning_content || null
         };
     } catch (error) {
         console.error('Chat Assistant Error:', error);
@@ -416,5 +532,7 @@ async function getApiUsageStats(params = {}) {
 module.exports = {
     generateAILog,
     chatWithAssistant,
-    getApiUsageStats
+    getApiUsageStats,
+    DEEPSEEK_MODELS,
+    DEFAULT_MODEL
 };

@@ -94,6 +94,69 @@ import SettingsModal from './components/SettingsModal';
 import FoolModeModal from './components/FoolModeModal';
 import ChatBot from './components/ChatBot';
 
+function getLogWorkload(log) {
+  const statText = log.diffStat || '';
+  const insertions = Number(statText.match(/(\d+) insertion/)?.[1] || 0);
+  const deletions = Number(statText.match(/(\d+) deletion/)?.[1] || 0);
+  const changedFiles = Number(statText.match(/(\d+) files? changed/)?.[1] || 0);
+  const textLength = [log.message, log.body, statText, log.diffContent]
+    .filter(value => typeof value === 'string')
+    .join('\n')
+    .trim()
+    .length;
+
+  // Prefer actual change volume; text length provides a fallback when stats are unavailable.
+  return Math.max(1, insertions + deletions + changedFiles * 10, Math.ceil(textLength / 80));
+}
+
+function splitLogsByWorkload(logs, dates) {
+  // 强制时间顺序：提交按日期升序、缺失日期升序；
+  // 分配时按序连续切片，先发生的提交只会分到更早的日期，绝不会颠倒时间线
+  const chronological = [...logs].sort((a, b) => {
+    const diff = new Date(a.date) - new Date(b.date);
+    return diff || String(a.hash || '').localeCompare(String(b.hash || ''));
+  });
+  const sortedDates = [...dates].sort();
+  const weightedLogs = chronological.map(log => ({ log, weight: getLogWorkload(log) }));
+  const totalWorkload = weightedLogs.reduce((total, item) => total + item.weight, 0);
+  const groups = [];
+  let logIndex = 0;
+  let remainingWorkload = totalWorkload;
+
+  sortedDates.forEach((date, dateIndex) => {
+    const remainingDays = sortedDates.length - dateIndex;
+    if (dateIndex === sortedDates.length - 1) {
+      groups.push({ date, logs: weightedLogs.slice(logIndex).map(item => item.log) });
+      return;
+    }
+
+    const targetWorkload = remainingWorkload / remainingDays;
+    const dayLogs = [];
+    let dayWorkload = 0;
+
+    while (logIndex < weightedLogs.length) {
+      const nextLog = weightedLogs[logIndex];
+      const logsLeftAfterNext = weightedLogs.length - logIndex - 1;
+      if (dayLogs.length > 0 && logsLeftAfterNext < remainingDays - 1) break;
+
+      if (dayLogs.length > 0) {
+        const currentDistance = Math.abs(targetWorkload - dayWorkload);
+        const nextDistance = Math.abs(targetWorkload - (dayWorkload + nextLog.weight));
+        if (nextDistance > currentDistance) break;
+      }
+
+      dayLogs.push(nextLog.log);
+      dayWorkload += nextLog.weight;
+      remainingWorkload -= nextLog.weight;
+      logIndex += 1;
+    }
+
+    groups.push({ date, logs: dayLogs });
+  });
+
+  return groups;
+}
+
 function App() {
   // 状态管理
   const [repoPaths, setRepoPaths] = useState([]);
@@ -117,7 +180,7 @@ function App() {
   const [templateOptions, setTemplateOptions] = useState({
     includeTomorrow: false,
     includeReflections: false,
-    includeProblems: true,
+    includeProblems: false,
     includeDiffContent: false
   });
   const [loading, setLoading] = useState(false);
@@ -130,6 +193,7 @@ function App() {
   const [xuexitongUsername, setXuexitongUsername] = useState('');
   const [xuexitongPassword, setXuexitongPassword] = useState('');
   const [browserPath, setBrowserPath] = useState('');
+  const [deepseekModel, setDeepseekModel] = useState('deepseek-v4-flash');
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState('yeah.mp3');
   const [failureSound, setFailureSound] = useState('啊咧？.mp3');
@@ -137,6 +201,7 @@ function App() {
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [cnHolidayCalendarEnabled, setCnHolidayCalendarEnabled] = useState(true);
+  const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -528,17 +593,18 @@ function App() {
     
     try {
       let currentLogs = logs;
-      
-      // 如果是按天补全，自动获取选中补全日期的提交记录
-      if (mode === 'daily') {
-        // 获取日期范围
-        const sortedDates = [...datesToFill];
+
+      // 自动获取选中补全日期范围的提交记录：
+      // - 按天补全：始终自动获取（保证与选中日期精确匹配）
+      // - 平均分配：主界面未加载提交记录时自动获取，已加载则优先使用手动选择
+      const fetchRangeLogs = async () => {
+        const sortedDates = [...datesToFill].sort();
         const firstDate = sortedDates[0];
         const lastDate = sortedDates[sortedDates.length - 1];
-        
+
         const start = `${firstDate.substring(0, 4)}-${firstDate.substring(4, 6)}-${firstDate.substring(6, 8)}`;
         const end = `${lastDate.substring(0, 4)}-${lastDate.substring(4, 6)}-${lastDate.substring(6, 8)}`;
-        
+
         console.log(`[一键补全] 正在自动获取 Git 日志 (${start} 至 ${end})...`);
         const res = await api.getGitLogs({
           repoPaths,
@@ -547,12 +613,28 @@ function App() {
           author: defaultUser,
           branches: {}
         });
-        
-        currentLogs = res.logs || [];
+        return res.logs || [];
+      };
+
+      if (mode === 'daily') {
+        currentLogs = await fetchRangeLogs();
         setLogs(currentLogs); // 同步更新主界面的日志列表
+      } else if (mode === 'average' && currentLogs.length === 0) {
+        currentLogs = await fetchRangeLogs();
+        setLogs(currentLogs);
       }
 
-      const validLogs = currentLogs.filter(log => !ignoredHashes.has(log.hash));
+      let logsForAllocation = currentLogs;
+      if (mode === 'average' && currentLogs.length > 0) {
+        const enriched = await api.enrichGitLogs({
+          logs: currentLogs,
+          repoPaths,
+          includeDiffContent: false
+        });
+        logsForAllocation = enriched.logs || currentLogs;
+      }
+
+      const validLogs = logsForAllocation.filter(log => !ignoredHashes.has(log.hash));
       console.log(`[一键补全] 开始执行，模式: ${mode}，补全日期: ${datesToFill.length} 天，有效提交: ${validLogs.length} 条`);
       
       // 按日期分组日志 (用于 daily 模式)
@@ -579,16 +661,12 @@ function App() {
         }
       } else {
         // 模式2: 平均分配 - 将所有提交平均分给选中的日期
-        const logsPerDay = Math.ceil(validLogs.length / datesToFill.length);
-        let currentLogIndex = 0;
-        
-        for (const missDate of datesToFill) {
-          const endIndex = Math.min(currentLogIndex + logsPerDay, validLogs.length);
-          const dayLogs = validLogs.slice(currentLogIndex, endIndex);
-          
-          fillData.push({ date: missDate, logs: dayLogs });
-          currentLogIndex = endIndex;
-        }
+        // The API returns newest-first for display; distribute oldest commits first.
+        const chronologicalLogs = [...validLogs].sort((a, b) => {
+          const timeDifference = new Date(a.date) - new Date(b.date);
+          return timeDifference || String(a.hash).localeCompare(String(b.hash));
+        });
+        fillData.push(...splitLogsByWorkload(chronologicalLogs, datesToFill));
       }
       
       // 并行生成 AI 日志内容
@@ -652,7 +730,7 @@ function App() {
   /**
    * 傻瓜模式一键生成逻辑
    */
-  const handleFoolModeGenerate = React.useCallback(async (selectedRepos, templateKey = 'concise', targetDate = null, customOptions = null, headless = true) => {
+  const handleFoolModeGenerate = React.useCallback(async (selectedRepos, templateKey = 'daily', targetDate = null, customOptions = null, headless = true) => {
     // 产品约定：傻瓜模式始终走无头同步，避免前台页面干扰
     const effectiveHeadless = true;
     console.log('[傻瓜模式] 开始执行...', { selectedRepos, templateKey, targetDate, headless: effectiveHeadless });
@@ -832,8 +910,8 @@ function App() {
                 console.log(`[定时任务] 开始执行自动同步...`);
                 lastTriggeredRef.current = currentTriggerKey;
                 api.updateConfig({ LAST_TRIGGERED_DATE: currentTriggerKey });
-                // 定时任务触发时，开启无头模式（headless: true）
-                handleFoolModeGenerate(foolModeRepos, 'concise', null, null, true);
+                // 定时任务触发时，开启无头模式（headless: true），统一使用公司规范的 daily 模版
+                handleFoolModeGenerate(foolModeRepos, 'daily', null, null, true);
               } else {
                 console.warn('[定时任务] 触发时间已到，但未配置仓库，跳过执行');
                 lastTriggeredRef.current = currentTriggerKey;
@@ -967,6 +1045,7 @@ function App() {
       setXuexitongUsername(res.XUEXITONG_USERNAME || '');
       setXuexitongPassword(res.XUEXITONG_PASSWORD || '');
       setBrowserPath(res.BROWSER_PATH || '');
+      setDeepseekModel(res.DEEPSEEK_MODEL || 'deepseek-v4-flash');
       setNotificationSoundEnabled(res.NOTIFICATION_SOUND_ENABLED === 'true' || res.NOTIFICATION_SOUND_ENABLED === true);
       
       // 兼容旧版本的默认音效文件名
@@ -979,6 +1058,9 @@ function App() {
       setScheduleTime(res.SCHEDULE_TIME || '18:00');
       setCnHolidayCalendarEnabled(
         res.CN_HOLIDAY_CALENDAR_ENABLED !== 'false' && res.CN_HOLIDAY_CALENDAR_ENABLED !== false
+      );
+      setDailyIncludeHours(
+        res.DAILY_INCLUDE_HOURS !== 'false' && res.DAILY_INCLUDE_HOURS !== false
       );
       
       // 加载邮件配置
@@ -1065,6 +1147,7 @@ function App() {
       if (key === 'XUEXITONG_USERNAME') setXuexitongUsername(value);
       if (key === 'XUEXITONG_PASSWORD') setXuexitongPassword(value);
       if (key === 'BROWSER_PATH') setBrowserPath(value);
+      if (key === 'DEEPSEEK_MODEL') setDeepseekModel(value);
       if (key === 'NOTIFICATION_SOUND_ENABLED') setNotificationSoundEnabled(value === 'true' || value === true);
       if (key === 'SUCCESS_SOUND') setSuccessSound(value);
       if (key === 'FAILURE_SOUND') setFailureSound(value);
@@ -1072,6 +1155,9 @@ function App() {
       if (key === 'SCHEDULE_TIME') setScheduleTime(value);
       if (key === 'CN_HOLIDAY_CALENDAR_ENABLED') {
         setCnHolidayCalendarEnabled(value === 'true' || value === true);
+      }
+      if (key === 'DAILY_INCLUDE_HOURS') {
+        setDailyIncludeHours(value === 'true' || value === true);
       }
       if (key === 'EMAIL_ADDRESS') setEmailAddress(value);
       if (key === 'DAILY_EMAIL_ENABLED') setDailyEmailEnabled(value === 'true' || value === true);
@@ -1817,8 +1903,10 @@ function App() {
               updateXuexitongUsername={(val) => updateConfig('XUEXITONG_USERNAME', val)}
               xuexitongPassword={xuexitongPassword}
                 updateXuexitongPassword={(val) => updateConfig('XUEXITONG_PASSWORD', val)}
-                browserPath={browserPath}
-                updateBrowserPath={(val) => updateConfig('BROWSER_PATH', val)}
+              browserPath={browserPath}
+              updateBrowserPath={(val) => updateConfig('BROWSER_PATH', val)}
+              deepseekModel={deepseekModel}
+              updateDeepseekModel={(val) => updateConfig('DEEPSEEK_MODEL', val)}
                 notificationSoundEnabled={notificationSoundEnabled}
                 updateNotificationSoundEnabled={(val) => updateConfig('NOTIFICATION_SOUND_ENABLED', val)}
                 successSound={successSound}
@@ -1831,6 +1919,8 @@ function App() {
                 updateScheduleTime={(val) => updateConfig('SCHEDULE_TIME', val)}
                 cnHolidayCalendarEnabled={cnHolidayCalendarEnabled}
                 updateCnHolidayCalendarEnabled={(val) => updateConfig('CN_HOLIDAY_CALENDAR_ENABLED', val)}
+                dailyIncludeHours={dailyIncludeHours}
+                updateDailyIncludeHours={(val) => updateConfig('DAILY_INCLUDE_HOURS', val)}
                 titleTemplate={titleTemplate}
               updateTitleTemplate={(val) => updateConfig('TITLE_TEMPLATE', val)}
               loading={loading}

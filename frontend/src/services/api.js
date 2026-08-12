@@ -19,6 +19,7 @@ const api = {
   getGitAuthors: (repoPaths) => window.electron.invoke('api:getGitAuthors', { repoPaths }),
   getGitBranches: (repoPaths) => window.electron.invoke('api:getGitBranches', { repoPaths }),
   getGitLogs: (params) => window.electron.invoke('api:getGitLogs', params),
+  enrichGitLogs: (params) => window.electron.invoke('api:enrichGitLogs', params),
 
   // AI & 模版相关
   getTemplates: () => window.electron.invoke('api:getTemplates'),

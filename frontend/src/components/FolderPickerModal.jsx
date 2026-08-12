@@ -20,6 +20,7 @@ const FolderPickerModal = ({
     };
   }, [originPos]);
   const [currentPath, setCurrentPath] = useState('');
+  const [selectedPath, setSelectedPath] = useState('');
   const [folders, setFolders] = useState([]);
   const [drives, setDrives] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -30,6 +31,7 @@ const FolderPickerModal = ({
     if (isOpen) {
       fetchDrives();
       fetchDir(initialPath || '');
+      setSelectedPath(initialPath || '');
     }
   }, [isOpen, initialPath]);
 
@@ -221,24 +223,36 @@ const FolderPickerModal = ({
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredFolders.map(folder => (
+                {filteredFolders.map(folder => {
+                  const separator = currentPath.endsWith('/') || currentPath.endsWith('\\') ? '' : '/';
+                  const fullPath = currentPath + separator + folder;
+                  const isSelected = selectedPath === fullPath;
+                  return (
                   <button
                     key={folder}
+                    // 单击：选中该文件夹（不进入）
+                    onClick={() => setSelectedPath(fullPath)}
+                    // 双击：进入该文件夹继续浏览
                     onDoubleClick={() => {
-                      const separator = currentPath.endsWith('/') || currentPath.endsWith('\\') ? '' : '/';
-                      fetchDir(currentPath + separator + folder + '/');
+                      setSelectedPath(fullPath);
+                      fetchDir(fullPath + '/');
                     }}
-                    className="flex flex-col items-start gap-2 p-4 rounded-2xl border border-gray-50 bg-gray-50/30 hover:bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-500/5 transition-all group text-left relative overflow-hidden"
+                    className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all group text-left relative overflow-hidden ${
+                      isSelected
+                        ? 'bg-white border-blue-400 ring-4 ring-blue-500/10 shadow-xl shadow-blue-500/10'
+                        : 'border-gray-50 bg-gray-50/30 hover:bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-500/5'
+                    }`}
                   >
-                    <div className="w-8 h-8 bg-amber-50 text-amber-500 rounded-lg flex items-center justify-center group-hover:bg-amber-100 transition-colors">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-50 text-blue-500' : 'bg-amber-50 text-amber-500 group-hover:bg-amber-100'}`}>
                       <Folder size={18} fill="currentColor" className="opacity-80" />
                     </div>
-                    <span className="text-xs font-bold text-gray-700 truncate w-full group-hover:text-blue-700">{folder}</span>
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                    <span className={`text-xs font-bold truncate w-full ${isSelected ? 'text-blue-700' : 'text-gray-700 group-hover:text-blue-700'}`}>{folder}</span>
+                    <div className={`absolute top-2 right-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                      {isSelected ? <Check size={14} className="text-blue-500" /> : <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
                     </div>
                   </button>
-                ))}
+                  );
+                })}
                 {filteredFolders.length === 0 && (
                   <div className="col-span-full py-20 flex flex-col items-center justify-center text-gray-300 gap-3">
                     <Folder size={48} className="opacity-10" />
@@ -258,7 +272,7 @@ const FolderPickerModal = ({
             </div>
             <div className="min-w-0">
               <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">Current Selection</p>
-              <p className="text-[11px] font-bold text-gray-700 truncate">{currentPath || '未选择'}</p>
+              <p className="text-[11px] font-bold text-gray-700 truncate">{selectedPath || currentPath || '未选择'}</p>
             </div>
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
@@ -269,8 +283,8 @@ const FolderPickerModal = ({
               取消
             </button>
             <button 
-              onClick={() => onSelect(currentPath)}
-              disabled={!currentPath}
+              onClick={() => onSelect(selectedPath || currentPath)}
+              disabled={!selectedPath && !currentPath}
               className="flex-1 sm:flex-none px-8 py-3 bg-blue-600 text-white text-sm font-black rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
               确认选择
