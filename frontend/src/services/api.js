@@ -34,6 +34,7 @@ const api = {
   // 系统相关
   showNotification: (data) => window.electron.invoke('api:showNotification', data),
   listSounds: () => window.electron.invoke('api:listSounds'),
+  getAppVersion: () => window.electron.invoke('api:getAppVersion'),
 
   // 外部跳转（如学习通笔记入口）
   openExternalUrl: (data) => window.electron.invoke('api:openExternalUrl', data),

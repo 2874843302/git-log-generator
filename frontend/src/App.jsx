@@ -202,6 +202,7 @@ function App() {
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [cnHolidayCalendarEnabled, setCnHolidayCalendarEnabled] = useState(true);
   const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
+  const [appVersion, setAppVersion] = useState('2.5.7');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -251,6 +252,9 @@ function App() {
   useEffect(() => {
     fetchTemplates();
     fetchConfig();
+
+    // 读取应用版本号（底栏展示），失败时回退默认值
+    api.getAppVersion().then((v) => { if (v) setAppVersion(v); }).catch(() => {});
 
     // 注册更新相关的监听
     const removeCheckListener = window.electron.receive('checking-for-update', () => {
@@ -1501,7 +1505,7 @@ function App() {
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
             <div className="flex items-center gap-2">
-                  <span>Version 2.5.6</span>
+                  <span>Version {appVersion}</span>
                   <button 
                     onClick={() => window.electron.send('check-for-update')}
                 className="hover:text-blue-500 transition-colors cursor-pointer"
