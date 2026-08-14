@@ -202,7 +202,8 @@ function App() {
   const [scheduleTime, setScheduleTime] = useState('18:00');
   const [cnHolidayCalendarEnabled, setCnHolidayCalendarEnabled] = useState(true);
   const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
-  const [appVersion, setAppVersion] = useState('2.5.7');
+  const [dailyClassicMode, setDailyClassicMode] = useState(false);
+  const [appVersion, setAppVersion] = useState('2.5.8');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -435,6 +436,7 @@ function App() {
         tomorrowPlanPrompt: isSupplementEnabled ? ((customOptions && customOptions.supplementPrompt !== undefined) ? customOptions.supplementPrompt : supplementPrompt) : '',
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
         options: currentOptions,
+        classicMode: dailyClassicMode,
         apiKey: apiKey // 确保传递 API Key
       });
       
@@ -456,7 +458,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, supplementPrompt, referenceLog, templateOptions, apiKey]);
+  }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, supplementPrompt, referenceLog, templateOptions, apiKey, dailyClassicMode]);
 
   /**
    * 分段生成并同步多日日志
@@ -1066,6 +1068,9 @@ function App() {
       setDailyIncludeHours(
         res.DAILY_INCLUDE_HOURS !== 'false' && res.DAILY_INCLUDE_HOURS !== false
       );
+      setDailyClassicMode(
+        res.DAILY_CLASSIC_MODE === 'true' || res.DAILY_CLASSIC_MODE === true
+      );
       
       // 加载邮件配置
       setEmailAddress(res.EMAIL_ADDRESS || '');
@@ -1162,6 +1167,9 @@ function App() {
       }
       if (key === 'DAILY_INCLUDE_HOURS') {
         setDailyIncludeHours(value === 'true' || value === true);
+      }
+      if (key === 'DAILY_CLASSIC_MODE') {
+        setDailyClassicMode(value === 'true' || value === true);
       }
       if (key === 'EMAIL_ADDRESS') setEmailAddress(value);
       if (key === 'DAILY_EMAIL_ENABLED') setDailyEmailEnabled(value === 'true' || value === true);
@@ -1458,11 +1466,12 @@ function App() {
             updateRepoAliases={(val) => updateConfig('REPO_ALIASES', val)}
           />
 
-          <LogGenerator 
+          <LogGenerator
             logs={logs}
             templates={templates}
             selectedTemplate={selectedTemplate}
             setSelectedTemplate={setSelectedTemplate}
+            dailyClassicMode={dailyClassicMode}
             templateOptions={templateOptions}
             setTemplateOptions={setTemplateOptions}
             customPrompt={customPrompt}
@@ -1925,6 +1934,8 @@ function App() {
                 updateCnHolidayCalendarEnabled={(val) => updateConfig('CN_HOLIDAY_CALENDAR_ENABLED', val)}
                 dailyIncludeHours={dailyIncludeHours}
                 updateDailyIncludeHours={(val) => updateConfig('DAILY_INCLUDE_HOURS', val)}
+                dailyClassicMode={dailyClassicMode}
+                updateDailyClassicMode={(val) => updateConfig('DAILY_CLASSIC_MODE', val)}
                 titleTemplate={titleTemplate}
               updateTitleTemplate={(val) => updateConfig('TITLE_TEMPLATE', val)}
               loading={loading}

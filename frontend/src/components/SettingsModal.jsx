@@ -36,6 +36,8 @@ const SettingsModal = ({
   updateCnHolidayCalendarEnabled,
   dailyIncludeHours,
   updateDailyIncludeHours,
+  dailyClassicMode,
+  updateDailyClassicMode,
   titleTemplate,
   updateTitleTemplate,
   emailAddress,
@@ -757,6 +759,25 @@ const SettingsModal = ({
                       >
                         <motion.div
                           animate={{ x: dailyIncludeHours ? 22 : 2 }}
+                          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                        />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 mt-1 border-t border-indigo-100/70">
+                      <div className="space-y-1 pr-2">
+                        <span className="text-[11px] font-bold text-gray-700 block">使用旧版日报格式</span>
+                        <p className="text-[9px] text-gray-500 leading-snug">
+                          开启：日常日报恢复经典 Markdown 板块（今日完成工作/遇到的问题/心得收获）；关闭：公司规范分条格式
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateDailyClassicMode(!dailyClassicMode)}
+                        className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${dailyClassicMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <motion.div
+                          animate={{ x: dailyClassicMode ? 22 : 2 }}
                           className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
                         />
                       </button>

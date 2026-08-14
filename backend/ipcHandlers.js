@@ -467,6 +467,7 @@ function registerIpcHandlers() {
       SCHEDULE_TIME: '18:00',
       TITLE_TEMPLATE: '工作日志-{date-hyphen}',
       DAILY_INCLUDE_HOURS: 'true',
+      DAILY_CLASSIC_MODE: 'false',
       EMAIL_ADDRESS: '',
       DAILY_EMAIL_ENABLED: 'false',
       WEEKLY_EMAIL_ENABLED: 'false',

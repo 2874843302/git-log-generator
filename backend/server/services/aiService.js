@@ -110,9 +110,20 @@ ${referenceLog}
         templatePrompt = templates[templateKey] || templates.daily;
     }
 
+    // 全局开关：开启旧版日报格式时，daily 走经典 Markdown 模版与通用板块逻辑
+    // 优先使用前端随请求传递的开关状态，环境变量作为兜底
+    const classicMode = templateKey === 'daily' && (
+        params.classicMode === true ||
+        process.env.DAILY_CLASSIC_MODE === 'true' ||
+        process.env.DAILY_CLASSIC_MODE === true
+    );
+    if (classicMode) {
+        templatePrompt = templates.dailyClassic;
+    }
+
     // 2. 根据选项添加要求 (仅在非自定义模式下强制注入板块，或者作为补充)
     // daily 模版采用公司规范的分条格式，板块由模版自身控制，跳过通用 ### 板块注入
-    const isDaily = templateKey === 'daily';
+    const isDaily = templateKey === 'daily' && !classicMode;
     // 全局配置：日志是否显示时间分配（--Xh 与 8 小时制）
     const includeHours = !(process.env.DAILY_INCLUDE_HOURS === 'false' || process.env.DAILY_INCLUDE_HOURS === false);
     if (options && templateKey !== 'custom' && !isDaily) {

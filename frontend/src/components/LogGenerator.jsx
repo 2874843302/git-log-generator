@@ -22,7 +22,8 @@ const LogGenerator = ({
   openSupplementModal,
   supplementPrompt,
   openTemplatePreview,
-  splitIndex
+  splitIndex,
+  dailyClassicMode = false
 }) => {
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const templateDropdownRef = useRef(null);
@@ -73,7 +74,7 @@ const LogGenerator = ({
                 <span className="truncate">
                   {(() => {
                     const labels = {
-                      daily: '📝 日常日报',
+                      daily: dailyClassicMode ? '📜 经典日报' : '📝 日常日报',
                       weekly: '📅 周报总结',
                       kpi: '🏆 绩效自述',
                       concise: '⚡ 极简汇报',
@@ -96,9 +97,9 @@ const LogGenerator = ({
                   className="absolute z-[60] w-full bg-white border border-gray-100 rounded-2xl shadow-2xl shadow-green-900/10 overflow-hidden p-1.5"
                 >
                   <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                    {Object.keys(templates).map(key => {
+                    {Object.keys(templates).filter(key => key !== 'dailyClassic').map(key => {
                       const labels = {
-                        daily: '📝 日常日报',
+                        daily: dailyClassicMode ? '📜 经典日报' : '📝 日常日报',
                         weekly: '📅 周报总结',
                         kpi: '🏆 绩效自述',
                         concise: '⚡ 极简汇报',
