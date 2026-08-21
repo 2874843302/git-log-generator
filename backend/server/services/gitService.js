@@ -79,12 +79,17 @@ async function enrichLogs(repoPathsMap, logs, includeDiffContent) {
 async function getAuthors(repoPaths) {
     let allAuthors = new Set();
     for (const path of repoPaths) {
-        const git = simpleGit(path);
-        const result = await git.raw(['log', '--all', '--format=%an']);
-        result.split('\n').forEach(a => {
-            const name = a.trim();
-            if (name) allAuthors.add(name);
-        });
+        try {
+            const git = simpleGit(path);
+            const result = await git.raw(['log', '--all', '--format=%an']);
+            result.split('\n').forEach(a => {
+                const name = a.trim();
+                if (name) allAuthors.add(name);
+            });
+        } catch (error) {
+            // 容忍非 git 仓库路径（如误选的普通文件夹），跳过并继续
+            console.error(`读取仓库 ${path} 作者失败:`, error.message);
+        }
     }
     return Array.from(allAuthors);
 }

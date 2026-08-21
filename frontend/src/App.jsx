@@ -203,7 +203,7 @@ function App() {
   const [cnHolidayCalendarEnabled, setCnHolidayCalendarEnabled] = useState(true);
   const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
   const [dailyClassicMode, setDailyClassicMode] = useState(false);
-  const [appVersion, setAppVersion] = useState('2.5.8');
+  const [appVersion, setAppVersion] = useState('2.5.9');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -526,8 +526,16 @@ function App() {
       console.log(`[分段同步] AI 内容生成完毕 (共 ${generatedContents.length} 份)`);
 
       // 4. 串行同步到学习通 (保持串行以避免并发冲突)
+      const totalToSync = generatedContents.filter(i => i.content).length;
+      let syncSeq = 0;
       for (const item of generatedContents) {
         if (item.content) {
+          syncSeq += 1;
+          api.showNotification({
+            title: '分段同步',
+            body: `正在同步第 ${syncSeq}/${totalToSync} 份日志到学习通（${item.date}）...`,
+            silent: true
+          });
           console.log(`[分段同步] 正在同步日期 ${item.date}...`);
           const result = await handleSyncToXuexitong(item.content, true, item.date, false, true); // 静默同步
           
@@ -622,12 +630,10 @@ function App() {
         return res.logs || [];
       };
 
-      if (mode === 'daily') {
+      // 自动获取选中补全日期范围的提交记录（按天与平均分配均始终获取，保证分配来源与选中日期一致，避免主界面残留旧记录干扰）
+      if (mode === 'daily' || mode === 'average') {
         currentLogs = await fetchRangeLogs();
         setLogs(currentLogs); // 同步更新主界面的日志列表
-      } else if (mode === 'average' && currentLogs.length === 0) {
-        currentLogs = await fetchRangeLogs();
-        setLogs(currentLogs);
       }
 
       let logsForAllocation = currentLogs;
@@ -675,28 +681,39 @@ function App() {
         fillData.push(...splitLogsByWorkload(chronologicalLogs, datesToFill));
       }
       
-      // 并行生成 AI 日志内容
-      console.log('[一键补全] 正在并行生成 AI 日志内容...');
-      const generationPromises = fillData.map(item => {
+      // 串行生成 AI 日志内容（避免并行调用争抢共享状态）
+      console.log('[一键补全] 正在串行生成 AI 日志内容...');
+      const generatedContents = [];
+      for (const item of fillData) {
         if (item.logs.length === 0) {
-          return Promise.resolve({ date: item.date, content: null, error: '该日期无可用提交记录' });
+          generatedContents.push({ date: item.date, content: null, error: '该日期无可用提交记录' });
+          continue;
         }
-        
+
         const formattedDate = `${item.date.substring(0, 4)}-${item.date.substring(4, 6)}-${item.date.substring(6, 8)}`;
         const options = { ...templateOptions, includeTomorrow: false };
-        
-        return generateLog(item.logs, selectedTemplate, repoPaths, options)
-          .then(content => ({ date: formattedDate, content, error: null }))
-          .catch(err => ({ date: formattedDate, content: null, error: err.message }));
-      });
-      
-      const generatedContents = await Promise.all(generationPromises);
+
+        try {
+          const content = await generateLog(item.logs, selectedTemplate, repoPaths, options);
+          generatedContents.push({ date: formattedDate, content, error: null });
+        } catch (err) {
+          generatedContents.push({ date: formattedDate, content: null, error: err.message });
+        }
+      }
       console.log(`[一键补全] AI 内容生成完毕 (共 ${generatedContents.length} 份)`);
       
       // 串行同步到学习通 (保持串行以避免并发冲突)
       console.log('[一键补全] 正在串行同步到学习通...');
+      const totalToSync = generatedContents.filter(i => i.content).length;
+      let syncSeq = 0;
       for (const item of generatedContents) {
         if (item.content) {
+          syncSeq += 1;
+          api.showNotification({
+            title: '一键补全',
+            body: `正在同步第 ${syncSeq}/${totalToSync} 天到学习通（${item.date}）...`,
+            silent: true
+          });
           const syncResult = await handleSyncToXuexitong(item.content, false, item.date, true, true);
           results.push({ ...syncResult, date: item.date });
           
@@ -713,10 +730,15 @@ function App() {
       
       console.log(`[一键补全] 执行完毕，成功: ${successCount}，失败: ${failureCount}`);
       
-      // 显示通知
+      // 显示通知（附带失败原因摘要，便于排查）
+      const failDetails = results
+        .filter(r => !r.success)
+        .slice(0, 3)
+        .map(r => `${r.date}(${r.error || '未知错误'})`)
+        .join('；');
       api.showNotification({
         title: '一键补全完成',
-        body: `成功补全 ${successCount} 天日志，失败 ${failureCount} 天`,
+        body: `成功补全 ${successCount} 天日志，失败 ${failureCount} 天${failDetails ? `：${failDetails}` : ''}`,
         silent: false
       });
       
@@ -836,6 +858,11 @@ function App() {
         if (content) {
           console.log('[傻瓜模式] AI 生成完成，开始自动同步学习通...');
           setHeadlessFoolModeText('正在后台无头同步到学习通...');
+          api.showNotification({
+            title: '傻瓜模式',
+            body: `${today} 的工作日志已生成，正在同步到学习通...`,
+            silent: true
+          });
           await handleSyncToXuexitong(content, true, today, effectiveHeadless);
         } else {
           console.warn('[傻瓜模式] AI 生成内容为空，取消同步');
