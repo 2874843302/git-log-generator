@@ -37,11 +37,22 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
       
       const res = await api.listDir(config.BASE_REPO_DIR);
       // 构造 repos 对象列表
-      const allRepos = res.folders.map(name => ({
+      const allFolders = res.folders.map(name => ({
         name,
         path: `${res.currentPath}/${name}`
       }));
-      
+
+      // 只展示真正的 git 仓库（仓库迁移/误放目录时避免“识别不到”）
+      let allRepos = allFolders;
+      try {
+        const filtered = await api.filterGitRepos(allFolders.map(r => r.path));
+        if (filtered && Array.isArray(filtered.repos)) {
+          allRepos = allFolders.filter(r => filtered.repos.includes(r.path));
+        }
+      } catch (e) {
+        console.error('过滤 git 仓库失败，回退展示全部目录:', e);
+      }
+
       setRepos(allRepos);
 
       // 加载补充内容

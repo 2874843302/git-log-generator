@@ -203,7 +203,8 @@ function App() {
   const [cnHolidayCalendarEnabled, setCnHolidayCalendarEnabled] = useState(true);
   const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
   const [dailyClassicMode, setDailyClassicMode] = useState(false);
-  const [appVersion, setAppVersion] = useState('2.5.9');
+  const [repoRoots, setRepoRoots] = useState({});
+  const [appVersion, setAppVersion] = useState('2.5.10');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -1229,6 +1230,17 @@ function App() {
     return () => clearTimeout(timer);
   }, [repoPaths]);
 
+  // 监听仓库列表变动，获取各自 git 根目录（用于“子项目 · 父仓库”标识）
+  useEffect(() => {
+    if (!repoPaths || repoPaths.length === 0) {
+      setRepoRoots({});
+      return;
+    }
+    api.getRepoRoots(repoPaths)
+      .then((res) => setRepoRoots((res && res.roots) || {}))
+      .catch((err) => console.error('获取仓库根目录失败:', err));
+  }, [repoPaths]);
+
   const selectFolder = (e) => {
     const rect = e?.currentTarget?.getBoundingClientRect();
     const pos = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
@@ -1245,11 +1257,45 @@ function App() {
     if (pickerConfig.type === 'base') {
       updateConfig('BASE_REPO_DIR', path);
     } else if (pickerConfig.type === 'repo') {
-      if (!repoPaths.includes(path)) {
-        const newPaths = [...repoPaths, path];
-        setRepoPaths(newPaths);
-        fetchAuthors(newPaths);
-        fetchBranches(newPaths);
+      // 自动识别：选最外层目录即可，内部 git 仓库 / monorepo 子项目一次性全部添加
+      try {
+        const detected = await api.detectRepos(path);
+        const found = (detected && detected.repos) || [];
+        const toAdd = found.filter((p) => !repoPaths.includes(p));
+        if (found.length === 0) {
+          api.showNotification({
+            title: '添加失败',
+            body: `「${path.split(/[/\\]/).pop()}」下未识别到 git 仓库，请确认目录内含仓库（.git 目录）`,
+            silent: true
+          });
+        } else if (toAdd.length === 0) {
+          api.showNotification({
+            title: '未添加新仓库',
+            body: '识别到的仓库/项目均已在列表中',
+            silent: true
+          });
+        } else {
+          const newPaths = [...repoPaths, ...toAdd];
+          setRepoPaths(newPaths);
+          fetchAuthors(newPaths);
+          fetchBranches(newPaths);
+          const names = toAdd.map((p) => p.split(/[/\\]/).pop()).slice(0, 5).join('、');
+          api.showNotification({
+            title: '仓库识别成功',
+            body: `共添加 ${toAdd.length} 个仓库/项目：${names}${toAdd.length > 5 ? ' 等' : ''}`,
+            silent: true
+          });
+        }
+      } catch (err) {
+        console.error('识别仓库失败:', err);
+        const msg = err?.message || '';
+        api.showNotification({
+          title: '识别失败',
+          body: msg.includes('No handler registered')
+            ? '后端仍是旧代码，请重启应用（关闭后重新 npm run dev）再添加'
+            : (msg || '扫描目录时出错'),
+          silent: true
+        });
       }
     }
     setPickerConfig({ ...pickerConfig, isOpen: false });
@@ -1434,8 +1480,9 @@ function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-          <ConfigPanel 
+          <ConfigPanel
             repoPaths={repoPaths}
+            repoRoots={repoRoots}
             selectFolder={selectFolder}
             removeFolder={removeFolder}
             authors={authors}

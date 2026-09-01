@@ -560,6 +560,31 @@ function registerIpcHandlers() {
     return { authors };
   });
 
+  // 校验单个路径是否为 git 仓库（添加仓库时前置校验）
+  ipcMain.handle('api:isGitRepo', async (event, { path }) => {
+    return { isRepo: await gitService.isGitRepo(path) };
+  });
+
+  // 批量过滤出 git 仓库路径（傻瓜模式仓库列表只展示真仓库）
+  ipcMain.handle('api:filterGitRepos', async (event, { paths }) => {
+    const flags = await Promise.all(paths.map((p) => gitService.isGitRepo(p)));
+    return { repos: paths.filter((_, i) => flags[i]) };
+  });
+
+  // 选择最外层目录时自动识别内部 git 仓库 / monorepo 子项目
+  ipcMain.handle('api:detectRepos', async (event, { path }) => {
+    return await gitService.detectRepos(path);
+  });
+
+  // 批量获取仓库根目录（子项目标识：root 与 path 不同即为子项目）
+  ipcMain.handle('api:getRepoRoots', async (event, { paths }) => {
+    const roots = {};
+    await Promise.all((paths || []).map(async (p) => {
+      roots[p] = await gitService.getRepoRoot(p);
+    }));
+    return { roots };
+  });
+
   ipcMain.handle('api:getGitBranches', async (event, { repoPaths }) => {
     const branches = await gitService.getBranches(repoPaths);
     return { branches };

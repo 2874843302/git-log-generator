@@ -20,6 +20,10 @@ const api = {
   getGitBranches: (repoPaths) => window.electron.invoke('api:getGitBranches', { repoPaths }),
   getGitLogs: (params) => window.electron.invoke('api:getGitLogs', params),
   enrichGitLogs: (params) => window.electron.invoke('api:enrichGitLogs', params),
+  isGitRepo: (path) => window.electron.invoke('api:isGitRepo', { path }),
+  filterGitRepos: (paths) => window.electron.invoke('api:filterGitRepos', { paths }),
+  detectRepos: (path) => window.electron.invoke('api:detectRepos', { path }),
+  getRepoRoots: (paths) => window.electron.invoke('api:getRepoRoots', { paths }),
 
   // AI & 模版相关
   getTemplates: () => window.electron.invoke('api:getTemplates'),

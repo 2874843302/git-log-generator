@@ -196,6 +196,11 @@ ${conciseSuffix}列表从 1. 开始计数。`;
         templatePrompt += `\n**特别要求（用户全局设置：不显示时间分配）**：组标题不含耗时，格式为“N. 项目名: 状态”；上述结构与示例中任何关于 --Xh 耗时、8 小时合计的描述均不遵循。`;
     }
 
+    // daily + 深度代码分析：依据 diff 细节按功能点拆分条目，避免过度合并导致内容过少
+    if (isDaily && options && options.includeDiffContent) {
+        templatePrompt += `\n**深度代码分析已开启**：请充分利用【代码详情】，按不同的功能点/逻辑变更拆分工作条目；同一功能点的多次提交仍合并为一条，但不同功能点禁止过度合并成一条，确保内容充实、完整全面。`;
+    }
+
     // 3. 准备日志上下文
     const hasLogs = logs && logs.length > 0;
     const includeTomorrow = options?.includeTomorrow;

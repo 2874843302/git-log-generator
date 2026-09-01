@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfigPanel = ({ 
   repoPaths, 
+  repoRoots = {}, 
   selectFolder, 
   removeFolder, 
   authors, 
@@ -299,6 +300,12 @@ const ConfigPanel = ({
                 const repoName = path.replace(/[\\/]$/, '').split(/[\\/]/).pop();
                 const alias = repoAliases[repoName];
                 const isEditing = editingAliasPath === path;
+                // 子项目标识：git 根目录与所选路径不同 → 显示所属父仓库
+                const norm = (p) => (p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+                const root = repoRoots[path];
+                const parentName = root && norm(root) !== norm(path)
+                  ? root.replace(/[\\/]$/, '').split(/[\\/]/).pop()
+                  : null;
 
                 return (
                   <div key={idx} className="group flex flex-col p-2 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-all shadow-sm">
@@ -312,6 +319,11 @@ const ConfigPanel = ({
                           {alias && !isEditing && (
                             <span className="text-[9px] text-blue-500 font-bold truncate">
                               别名: {alias}
+                            </span>
+                          )}
+                          {parentName && (
+                            <span className="text-[9px] text-amber-500 font-bold truncate" title={`所属仓库: ${root}`}>
+                              子项目 · {parentName}
                             </span>
                           )}
                         </div>
