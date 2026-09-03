@@ -204,7 +204,9 @@ function App() {
   const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
   const [dailyClassicMode, setDailyClassicMode] = useState(false);
   const [repoRoots, setRepoRoots] = useState({});
-  const [appVersion, setAppVersion] = useState('2.5.10');
+  const [fillStartDate, setFillStartDate] = useState('');
+  const [fillEndDate, setFillEndDate] = useState('');
+  const [appVersion, setAppVersion] = useState('2.5.11');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -595,6 +597,13 @@ function App() {
       setError('请至少选中一天需要补全的日期');
       return;
     }
+
+    // 提交查询范围（可选）：用户选了范围则按范围拉提交，否则默认勾选补全日期的首尾
+    const hasRange = !!(fillStartDate && fillEndDate);
+    if (hasRange && dayjs(fillEndDate).isBefore(dayjs(fillStartDate), 'day')) {
+      setError('结束日期不能早于开始日期');
+      return;
+    }
     
     if (!repoPaths || repoPaths.length === 0) {
       setError('未选择任何仓库，请先在左侧选择需要补全记录的仓库');
@@ -609,31 +618,22 @@ function App() {
     try {
       let currentLogs = logs;
 
-      // 自动获取选中补全日期范围的提交记录：
-      // - 按天补全：始终自动获取（保证与选中日期精确匹配）
-      // - 平均分配：主界面未加载提交记录时自动获取，已加载则优先使用手动选择
-      const fetchRangeLogs = async () => {
-        const sortedDates = [...datesToFill].sort();
-        const firstDate = sortedDates[0];
-        const lastDate = sortedDates[sortedDates.length - 1];
+      // 自动获取提交记录（按天与平均分配均始终获取，避免主界面残留旧记录干扰）
+      // 查询范围：优先用户自选的“提交查询范围”，否则为勾选补全日期的首尾
+      if (mode === 'daily' || mode === 'average') {
+        const fmt8 = (d8) => `${d8.substring(0, 4)}-${d8.substring(4, 6)}-${d8.substring(6, 8)}`;
+        const queryStart = hasRange ? fillStartDate : fmt8(datesToFill[0]);
+        const queryEnd = hasRange ? fillEndDate : fmt8(datesToFill[datesToFill.length - 1]);
 
-        const start = `${firstDate.substring(0, 4)}-${firstDate.substring(4, 6)}-${firstDate.substring(6, 8)}`;
-        const end = `${lastDate.substring(0, 4)}-${lastDate.substring(4, 6)}-${lastDate.substring(6, 8)}`;
-
-        console.log(`[一键补全] 正在自动获取 Git 日志 (${start} 至 ${end})...`);
+        console.log(`[一键补全] 正在自动获取 Git 日志 (${queryStart} 至 ${queryEnd})...`);
         const res = await api.getGitLogs({
           repoPaths,
-          startDate: start,
-          endDate: end,
+          startDate: queryStart,
+          endDate: queryEnd,
           author: defaultUser,
           branches: {}
         });
-        return res.logs || [];
-      };
-
-      // 自动获取选中补全日期范围的提交记录（按天与平均分配均始终获取，保证分配来源与选中日期一致，避免主界面残留旧记录干扰）
-      if (mode === 'daily' || mode === 'average') {
-        currentLogs = await fetchRangeLogs();
+        currentLogs = res.logs || [];
         setLogs(currentLogs); // 同步更新主界面的日志列表
       }
 
@@ -669,7 +669,7 @@ function App() {
           // 将 20260128 格式转换为 2026-01-28
           const formattedDate = `${missDate.substring(0, 4)}-${missDate.substring(4, 6)}-${missDate.substring(6, 8)}`;
           const dayLogs = logsByDate[formattedDate] || [];
-          
+
           fillData.push({ date: missDate, logs: dayLogs });
         }
       } else {
@@ -1515,6 +1515,10 @@ function App() {
             }}
             onDeselectAllMissingDates={() => setSelectedMissingDates([])}
             autoFillLogs={handleAutoFillLogs}
+            fillStartDate={fillStartDate}
+            fillEndDate={fillEndDate}
+            onFillStartDate={setFillStartDate}
+            onFillEndDate={setFillEndDate}
             onBatchLeaveSync={handleBatchLeaveSync}
             openBranchPicker={(pos) => {
               setBranchPickerOpen(true);

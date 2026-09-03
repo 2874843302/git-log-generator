@@ -5,6 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 const ConfigPanel = ({ 
   repoPaths, 
   repoRoots = {}, 
+  fillStartDate = '', 
+  fillEndDate = '', 
+  onFillStartDate, 
+  onFillEndDate, 
   selectFolder, 
   removeFolder, 
   authors, 
@@ -265,6 +269,32 @@ const ConfigPanel = ({
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* 提交查询范围（可选，作用于按天补全与平均分配） */}
+            <div className="mt-3 p-3 rounded-xl border bg-blue-50 border-blue-100 text-blue-700 text-[10px] leading-relaxed shadow-sm space-y-1.5">
+              <div className="flex items-center gap-2 font-black uppercase text-[9px]">
+                <Calendar size={12} className="shrink-0" />
+                <span>提交查询范围（可选）</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={fillStartDate}
+                  onChange={(e) => onFillStartDate?.(e.target.value)}
+                  className="flex-1 min-w-0 px-1.5 py-1 rounded-lg border border-blue-200 bg-white text-[9px] font-bold text-blue-900 outline-none focus:border-blue-400"
+                />
+                <span className="text-[9px] font-bold shrink-0">至</span>
+                <input
+                  type="date"
+                  value={fillEndDate}
+                  onChange={(e) => onFillEndDate?.(e.target.value)}
+                  className="flex-1 min-w-0 px-1.5 py-1 rounded-lg border border-blue-200 bg-white text-[9px] font-bold text-blue-900 outline-none focus:border-blue-400"
+                />
+              </div>
+              <p className="text-[8px] text-blue-600 opacity-80 italic">
+                留空：默认拉取<b>勾选补全日期首尾</b>区间的提交；选定后：<b>按天补全 / 平均分配</b>均按此范围查询提交。
+              </p>
+            </div>
           </motion.section>
         )}
       </AnimatePresence>
