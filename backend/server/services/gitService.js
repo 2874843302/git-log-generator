@@ -28,6 +28,15 @@ function listSubDirs(dir) {
     }
 }
 
+// 快速判定仓库根：存在 .git（目录或 worktree/submodule 文件）即视为 git 管理，避免逐个起 git 进程
+function hasGitDir(dir) {
+    try {
+        return fs.existsSync(path.join(dir, '.git'));
+    } catch (e) {
+        return false;
+    }
+}
+
 /**
  * monorepo 展开：仓库根目录下带项目标记文件的子目录（两层内），>=2 个才认为是多项目
  */
@@ -58,19 +67,19 @@ async function detectRepos(rootPath) {
     }
 
     const found = [];
-    const walk = async (dir, depth) => {
-        if (depth > 3 || found.length >= 20) return;
-        if (await isGitRepo(dir)) {
+    const walk = (dir, depth) => {
+        if (depth > 4 || found.length >= 100) return;
+        if (hasGitDir(dir)) {
             const projects = expandMonorepo(dir);
             if (projects.length > 0) found.push(...projects);
             else found.push(dir);
-            return; // 已进入仓库，不再下钻
+            return; // 已是仓库根，不再下钻
         }
         for (const sub of listSubDirs(dir)) {
-            await walk(sub, depth + 1);
+            walk(sub, depth + 1);
         }
     };
-    await walk(rootPath, 0);
+    walk(rootPath, 0);
     return { repos: found, monorepo: false };
 }
 

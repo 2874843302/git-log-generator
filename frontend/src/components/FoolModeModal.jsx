@@ -10,6 +10,7 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [baseDirNorm, setBaseDirNorm] = useState('');
   const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [supplement, setSupplement] = useState('');
   const [options, setOptions] = useState({
@@ -34,23 +35,34 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
       if (!config.BASE_REPO_DIR) {
         throw new Error('未配置基础仓库目录');
       }
+      setBaseDirNorm(String(config.BASE_REPO_DIR).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase());
       
-      const res = await api.listDir(config.BASE_REPO_DIR);
-      // 构造 repos 对象列表
-      const allFolders = res.folders.map(name => ({
-        name,
-        path: `${res.currentPath}/${name}`
-      }));
-
-      // 只展示真正的 git 仓库（仓库迁移/误放目录时避免“识别不到”）
-      let allRepos = allFolders;
+      // 递归发现基础目录下所有 git 管理的仓库/子项目（不限一层）
+      let allRepos = [];
       try {
-        const filtered = await api.filterGitRepos(allFolders.map(r => r.path));
-        if (filtered && Array.isArray(filtered.repos)) {
-          allRepos = allFolders.filter(r => filtered.repos.includes(r.path));
-        }
+        const det = await api.detectRepos(config.BASE_REPO_DIR);
+        const paths = (det && det.repos) || [];
+        allRepos = paths.map((p) => ({
+          name: p.replace(/[\\/]$/, '').split(/[\\/]/).pop(),
+          path: p.replace(/\\/g, '/')
+        }));
       } catch (e) {
-        console.error('过滤 git 仓库失败，回退展示全部目录:', e);
+        // 旧后端无 detectRepos 时回退：单层目录 + git 过滤
+        console.error('递归识别仓库失败，回退单层列表:', e);
+        const res = await api.listDir(config.BASE_REPO_DIR);
+        const allFolders = res.folders.map(name => ({
+          name,
+          path: `${res.currentPath}/${name}`.replace(/\\/g, '/')
+        }));
+        try {
+          const filtered = await api.filterGitRepos(allFolders.map(r => r.path));
+          if (filtered && Array.isArray(filtered.repos)) {
+            const ok = new Set(filtered.repos.map(p => p.replace(/\\/g, '/')));
+            allRepos = allFolders.filter(r => ok.has(r.path));
+          }
+        } catch (e2) {
+          allRepos = allFolders;
+        }
       }
 
       setRepos(allRepos);
@@ -65,10 +77,12 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
       if (lastSelected !== undefined && lastSelected !== null) {
         // 如果记录不为空字符串，则解析并过滤有效路径
         if (lastSelected.trim() !== "") {
-          const savedPaths = lastSelected.split(',');
-          const validPaths = savedPaths.filter(path => 
-            allRepos.some(r => r.path === path)
-          );
+          // 路径分隔符归一化后匹配，兼容历史保存的反斜杠路径
+          const norm = (p) => (p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+          const byNorm = new Map(allRepos.map(r => [norm(r.path), r.path]));
+          const validPaths = lastSelected.split(',')
+            .map(p => byNorm.get(norm(p)))
+            .filter(Boolean);
           setSelectedRepos(validPaths);
         } else {
           // 明确记录为空（全部取消选择），保持为空
@@ -226,6 +240,11 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
               <div className="max-h-60 overflow-y-auto custom-scrollbar px-2 py-2 -mx-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filteredRepos.map((repo) => {
                   const alias = repoAliases[repo.name];
+                  // 相对基础目录的路径（子项目显示用于区分同名目录）
+                  const rel = baseDirNorm && repo.path.toLowerCase().startsWith(baseDirNorm)
+                    ? repo.path.slice(baseDirNorm.length).replace(/^\/+/, '')
+                    : repo.path;
+                  const subLabel = rel && rel !== repo.name ? rel : null;
                   return (
                     <motion.div
                       key={repo.path}
@@ -253,6 +272,11 @@ const FoolModeModal = ({ isOpen, onClose, onGenerate, onReposChange, originPos, 
                           {alias && (
                             <span className="text-[10px] text-blue-500 font-bold truncate">
                               {alias}
+                            </span>
+                          )}
+                          {subLabel && (
+                            <span className="text-[9px] text-gray-400 font-medium truncate" title={repo.path}>
+                              {subLabel}
                             </span>
                           )}
                         </div>

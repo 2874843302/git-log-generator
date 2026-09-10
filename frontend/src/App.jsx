@@ -206,7 +206,7 @@ function App() {
   const [repoRoots, setRepoRoots] = useState({});
   const [fillStartDate, setFillStartDate] = useState('');
   const [fillEndDate, setFillEndDate] = useState('');
-  const [appVersion, setAppVersion] = useState('2.5.11');
+  const [appVersion, setAppVersion] = useState('2.5.12');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
