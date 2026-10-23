@@ -15,10 +15,11 @@ const gitService = require('./server/services/gitService');
 const aiService = require('./server/services/aiService');
 const scheduler = require('./scheduler');
 const { templates } = require('./server/constants/templates');
-const { getSetting, setSetting, getAllSettings } = require('./database');
+const { getSetting, setSetting, setSettings, getAllSettings } = require('./database');
 const emailConfig = require('./emailConfig');
 const { buildNoteTitleFromTemplate } = require('./noteTitleTemplate');
 const holidayCalendar = require('./holidayCalendar');
+const { DEFAULT_REMINDER_TIMES, buildReminderSchedules } = require('./reminderSchedule');
 
 /**
  * 迁移 .env 文件到 SQLite (仅在 SQLite 中没有对应键时迁移)
@@ -419,10 +420,21 @@ function registerIpcHandlers() {
 
   ipcMain.handle('api:updateConfig', async (event, newConfig) => {
     try {
+      const reminderTimeChanged = Object.keys(DEFAULT_REMINDER_TIMES).some(key => newConfig[key] !== undefined);
+      if (reminderTimeChanged) {
+        buildReminderSchedules({ ...DEFAULT_REMINDER_TIMES, ...getAllSettings(), ...newConfig });
+      }
+      if (newConfig.DEEPSEEK_MODEL !== undefined) {
+        if (typeof newConfig.DEEPSEEK_MODEL !== 'string' || !newConfig.DEEPSEEK_MODEL.trim()) {
+          throw new Error('模型名称不能为空');
+        }
+        newConfig = { ...newConfig, DEEPSEEK_MODEL: newConfig.DEEPSEEK_MODEL.trim() };
+      }
+      setSettings(newConfig);
       Object.entries(newConfig).forEach(([key, value]) => {
-        setSetting(key, value);
         process.env[key] = value;
       });
+      if (reminderTimeChanged) scheduler.initCronJobs();
 
       // 如果更新了定时任务相关的配置，同步到 Windows 任务计划程序
       if (newConfig.SCHEDULE_ENABLED !== undefined || newConfig.SCHEDULE_TIME !== undefined) {
@@ -471,6 +483,7 @@ function registerIpcHandlers() {
       EMAIL_ADDRESS: '',
       DAILY_EMAIL_ENABLED: 'false',
       WEEKLY_EMAIL_ENABLED: 'false',
+      ...DEFAULT_REMINDER_TIMES,
       CN_HOLIDAY_CALENDAR_ENABLED: 'true'
     };
 
@@ -573,7 +586,57 @@ function registerIpcHandlers() {
 
   // 选择最外层目录时自动识别内部 git 仓库 / monorepo 子项目
   ipcMain.handle('api:detectRepos', async (event, { path }) => {
-    return await gitService.detectRepos(path);
+    return await gitService.detectRepos(path, { wholeRepoPaths: getSetting('WHOLE_REPO_PATHS', []) });
+  });
+
+  ipcMain.handle('api:setRepoMode', async (event, { path: repoPath, whole, repoPaths, foolModeRepos }) => {
+    if (typeof whole !== 'boolean') throw new Error('仓库模式无效');
+    const root = await gitService.getRepoRoot(repoPath);
+    if (!root) throw new Error('请选择有效的 Git 仓库目录');
+    const normalize = (p) => {
+      const resolved = path.resolve(p);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    const rootKey = normalize(root);
+    const wholeRepoPaths = getSetting('WHOLE_REPO_PATHS', []).filter(p => normalize(p) !== rootKey);
+    if (whole) wholeRepoPaths.push(root);
+    const { repos } = await gitService.detectRepos(root, { wholeRepoPaths });
+
+    // Replace only selections belonging to this Git root, preserving separate nested repositories.
+    const replaceSelection = async (selected, addIfMissing) => {
+      const result = [];
+      let replaced = false;
+      for (const selectedPath of selected) {
+        const selectedKey = normalize(selectedPath);
+        let sameRepo = selectedKey === rootKey;
+        if (!sameRepo && selectedKey.startsWith(rootKey + path.sep)) {
+          const selectedRoot = await gitService.getRepoRoot(selectedPath);
+          sameRepo = selectedRoot && normalize(selectedRoot) === rootKey;
+        }
+        if (sameRepo) {
+          if (!replaced) result.push(...repos);
+          replaced = true;
+        } else {
+          result.push(selectedPath);
+        }
+      }
+      if (!replaced && addIfMissing) result.push(...repos);
+      return [...new Map(result.map(p => [normalize(p), p])).values()];
+    };
+    const nextRepoPaths = await replaceSelection(
+      repoPaths || String(getSetting('LAST_SELECTED_REPOS', '')).split(',').filter(Boolean), true
+    );
+    const nextFoolModeRepos = await replaceSelection(
+      foolModeRepos || String(getSetting('FOOL_MODE_SELECTED_REPOS', '')).split(',').filter(Boolean), false
+    );
+    const settings = {
+      WHOLE_REPO_PATHS: wholeRepoPaths,
+      LAST_SELECTED_REPOS: nextRepoPaths.join(','),
+      FOOL_MODE_SELECTED_REPOS: nextFoolModeRepos.join(',')
+    };
+    setSettings(settings);
+    Object.entries(settings).forEach(([key, value]) => { process.env[key] = value; });
+    return { success: true, repos, repoPaths: nextRepoPaths, foolModeRepos: nextFoolModeRepos, wholeRepoPaths };
   });
 
   // 批量获取仓库根目录（子项目标识：root 与 path 不同即为子项目）

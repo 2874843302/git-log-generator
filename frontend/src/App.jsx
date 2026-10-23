@@ -204,9 +204,12 @@ function App() {
   const [dailyIncludeHours, setDailyIncludeHours] = useState(true);
   const [dailyClassicMode, setDailyClassicMode] = useState(false);
   const [repoRoots, setRepoRoots] = useState({});
+  const [wholeRepoPaths, setWholeRepoPaths] = useState([]);
+  const [repoModeLoading, setRepoModeLoading] = useState(false);
+  const [repoModeError, setRepoModeError] = useState('');
   const [fillStartDate, setFillStartDate] = useState('');
   const [fillEndDate, setFillEndDate] = useState('');
-  const [appVersion, setAppVersion] = useState('2.5.12');
+  const [appVersion, setAppVersion] = useState('2.5.13');
   const [emailAddress, setEmailAddress] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(465);
@@ -216,6 +219,8 @@ function App() {
   const [repoAliases, setRepoAliases] = useState({});
   const [dailyEmailEnabled, setDailyEmailEnabled] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
+  const [dailyEmailTime, setDailyEmailTime] = useState('20:00');
+  const [weeklyEmailTime, setWeeklyEmailTime] = useState('21:00');
   const [titleTemplate, setTitleTemplate] = useState('');
   const [countdown, setCountdown] = useState('');
   const [pickerConfig, setPickerConfig] = useState({ isOpen: false, type: '', initialPath: '', originPos: null });
@@ -1103,13 +1108,16 @@ function App() {
       // 加载邮件配置
       setEmailAddress(res.EMAIL_ADDRESS || '');
       setSmtpHost(res.SMTP_HOST || '');
-      setSmtpPort(res.SMTP_PORT || 465);
+      setSmtpPort(Number(res.SMTP_PORT) || 465);
       setSmtpUser(res.SMTP_USER || '');
       setSmtpPass(res.SMTP_PASS || '');
       setFromName(res.FROM_NAME || '');
       setDailyEmailEnabled(res.DAILY_EMAIL_ENABLED === 'true' || res.DAILY_EMAIL_ENABLED === true);
       setWeeklyEmailEnabled(res.WEEKLY_EMAIL_ENABLED === 'true' || res.WEEKLY_EMAIL_ENABLED === true);
+      setDailyEmailTime(res.DAILY_EMAIL_TIME || '20:00');
+      setWeeklyEmailTime(res.WEEKLY_EMAIL_TIME || '21:00');
       setRepoAliases(res.REPO_ALIASES || {});
+      setWholeRepoPaths(res.WHOLE_REPO_PATHS || []);
 
       setTitleTemplate(res.TITLE_TEMPLATE || '');
       
@@ -1172,6 +1180,31 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const updateReminderTimes = async (config) => {
+    const result = await api.updateConfig(config);
+    if (!result?.success) throw new Error('保存提醒时间失败，请重试');
+    setDailyEmailTime(config.DAILY_EMAIL_TIME);
+    setWeeklyEmailTime(config.WEEKLY_EMAIL_TIME);
+  };
+
+  const updateModel = async (model) => {
+    const result = await api.updateConfig({ DEEPSEEK_MODEL: model.trim() });
+    if (!result?.success) throw new Error('保存模型失败，请重试');
+    setDeepseekModel(model.trim());
+  };
+
+  const updateSmtpConfig = async (config) => {
+    const result = await api.updateConfig(config);
+    if (!result?.success) {
+      throw new Error(result?.error || '保存服务器配置失败，请重试');
+    }
+    setSmtpHost(config.SMTP_HOST);
+    setSmtpPort(config.SMTP_PORT);
+    setSmtpUser(config.SMTP_USER);
+    setSmtpPass(config.SMTP_PASS);
+    setFromName(config.FROM_NAME);
   };
 
   const updateConfig = async (key, value) => {
@@ -1253,15 +1286,45 @@ function App() {
     setPickerConfig({ isOpen: true, type: 'base', initialPath: baseDir, originPos: pos });
   };
 
-  const handleFolderSelect = async (path) => {
+  const changeRepoMode = async (path, whole) => {
+    setRepoModeLoading(true);
+    setRepoModeError('');
+    try {
+      const result = await api.setRepoMode({ path, whole, repoPaths, foolModeRepos });
+      if (!result?.success) throw new Error('保存仓库模式失败，请重试');
+      setWholeRepoPaths(result.wholeRepoPaths);
+      setRepoPaths(result.repoPaths);
+      setFoolModeRepos(result.foolModeRepos);
+      setSelectedBranches(prev => Object.fromEntries(
+        Object.entries(prev).filter(([repo]) => result.repoPaths.includes(repo))
+      ));
+      fetchAuthors(result.repoPaths);
+      fetchBranches(result.repoPaths);
+      return result;
+    } catch (err) {
+      setRepoModeError(err.message || '切换仓库模式失败，请重试');
+      throw err;
+    } finally {
+      setRepoModeLoading(false);
+    }
+  };
+
+  const handleFolderSelect = async (path, { wholeRepo = false } = {}) => {
     if (pickerConfig.type === 'base') {
       updateConfig('BASE_REPO_DIR', path);
     } else if (pickerConfig.type === 'repo') {
       // 自动识别：选最外层目录即可，内部 git 仓库 / monorepo 子项目一次性全部添加
       try {
+        if (wholeRepo) {
+          await changeRepoMode(path, true);
+          setPickerConfig({ ...pickerConfig, isOpen: false });
+          return;
+        }
         const detected = await api.detectRepos(path);
         const found = (detected && detected.repos) || [];
-        const toAdd = found.filter((p) => !repoPaths.includes(p));
+        const normalize = p => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+        const knownPaths = new Set(repoPaths.map(normalize));
+        const toAdd = found.filter(p => !knownPaths.has(normalize(p)));
         if (found.length === 0) {
           api.showNotification({
             title: '添加失败',
@@ -1483,6 +1546,10 @@ function App() {
           <ConfigPanel
             repoPaths={repoPaths}
             repoRoots={repoRoots}
+            wholeRepoPaths={wholeRepoPaths}
+            onRepoModeChange={changeRepoMode}
+            repoModeLoading={repoModeLoading}
+            repoModeError={repoModeError}
             selectFolder={selectFolder}
             removeFolder={removeFolder}
             authors={authors}
@@ -1751,6 +1818,7 @@ function App() {
             initialPath={pickerConfig.initialPath}
             title={pickerConfig.type === 'base' ? "设置基础工作目录" : "选择 Git 仓库"}
             originPos={pickerConfig.originPos}
+            showRepoMode={pickerConfig.type === 'repo'}
           />
         )}
       </AnimatePresence>
@@ -1997,7 +2065,7 @@ function App() {
               browserPath={browserPath}
               updateBrowserPath={(val) => updateConfig('BROWSER_PATH', val)}
               deepseekModel={deepseekModel}
-              updateDeepseekModel={(val) => updateConfig('DEEPSEEK_MODEL', val)}
+              updateDeepseekModel={updateModel}
                 notificationSoundEnabled={notificationSoundEnabled}
                 updateNotificationSoundEnabled={(val) => updateConfig('NOTIFICATION_SOUND_ENABLED', val)}
                 successSound={successSound}
@@ -2027,17 +2095,16 @@ function App() {
               dailyEmailEnabled={dailyEmailEnabled}
               updateDailyEmailEnabled={(val) => updateConfig('DAILY_EMAIL_ENABLED', val)}
               weeklyEmailEnabled={weeklyEmailEnabled}
+              dailyEmailTime={dailyEmailTime}
+              weeklyEmailTime={weeklyEmailTime}
+              updateReminderTimes={updateReminderTimes}
               updateWeeklyEmailEnabled={(val) => updateConfig('WEEKLY_EMAIL_ENABLED', val)}
               smtpHost={smtpHost}
-              updateSmtpHost={(val) => updateConfig('SMTP_HOST', val)}
               smtpPort={smtpPort}
-              updateSmtpPort={(val) => updateConfig('SMTP_PORT', val)}
               smtpUser={smtpUser}
-              updateSmtpUser={(val) => updateConfig('SMTP_USER', val)}
               smtpPass={smtpPass}
-              updateSmtpPass={(val) => updateConfig('SMTP_PASS', val)}
               fromName={fromName}
-              updateFromName={(val) => updateConfig('FROM_NAME', val)}
+              updateSmtpConfig={updateSmtpConfig}
               initEnv={initEnv}
             />
           )}

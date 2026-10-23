@@ -1,10 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, User, Check, Zap, CalendarCheck, AlertCircle, Bed } from 'lucide-react';
+import { Settings, Plus, Folder, Trash2, Calendar, Loader2, GitBranch, ChevronRight, User, Check, Zap, CalendarCheck, AlertCircle, Bed, Combine, FolderTree } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ConfigPanel = ({ 
   repoPaths, 
   repoRoots = {}, 
+  wholeRepoPaths = [],
+  onRepoModeChange,
+  repoModeLoading = false,
+  repoModeError = '',
   fillStartDate = '', 
   fillEndDate = '', 
   onFillStartDate, 
@@ -333,6 +337,7 @@ const ConfigPanel = ({
                 // 子项目标识：git 根目录与所选路径不同 → 显示所属父仓库
                 const norm = (p) => (p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
                 const root = repoRoots[path];
+                const isWholeRepo = wholeRepoPaths.some(p => norm(p) === norm(root || path));
                 const parentName = root && norm(root) !== norm(path)
                   ? root.replace(/[\\/]$/, '').split(/[\\/]/).pop()
                   : null;
@@ -356,9 +361,23 @@ const ConfigPanel = ({
                               子项目 · {parentName}
                             </span>
                           )}
+                          {isWholeRepo && !parentName && (
+                            <span className="text-[9px] text-green-600 font-bold">整仓</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        {(parentName || isWholeRepo) && (
+                          <button
+                            onClick={() => onRepoModeChange(root || path, !isWholeRepo).catch(() => {})}
+                            disabled={repoModeLoading}
+                            title={isWholeRepo ? '按子项目拆分' : '合并为整个仓库'}
+                            aria-label={isWholeRepo ? '按子项目拆分' : '合并为整个仓库'}
+                            className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40"
+                          >
+                            {repoModeLoading ? <Loader2 size={12} className="animate-spin" /> : isWholeRepo ? <FolderTree size={12} /> : <Combine size={12} />}
+                          </button>
+                        )}
                         <button 
                           onClick={() => isEditing ? handleSaveAlias(path) : startEditingAlias(path)}
                           className={`p-1 rounded transition-all ${isEditing ? 'text-green-500 hover:bg-green-50' : 'text-gray-300 hover:text-blue-500 hover:bg-blue-50'}`}
@@ -409,6 +428,7 @@ const ConfigPanel = ({
                   </div>
                 );
               })}
+              {repoModeError && <p role="alert" className="text-xs text-red-600 break-words mt-2">{repoModeError}</p>}
               <button 
                 onClick={selectFolder}
                 className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30 transition-all text-[11px] font-bold"

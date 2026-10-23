@@ -9,6 +9,7 @@ const holidayCalendar = require('./holidayCalendar');
 const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
 const dayjs = require('dayjs');
+const { DEFAULT_REMINDER_TIMES, buildReminderSchedules } = require('./reminderSchedule');
 
 /**
  * Windows 任务计划程序管理服务
@@ -23,16 +24,20 @@ class SchedulerService {
      * 初始化定时任务 (内存中的 cron，用于应用运行期间的邮件提醒)
      */
     initCronJobs() {
-        // 1. 每日晚八点提醒 (20:00)
-        const dailyJob = cron.schedule('0 20 * * *', () => {
-            console.log('[Scheduler] 触发每日日志检查提醒 (20:00)');
-            this.checkAndSendReminder('daily');
+        const times = Object.fromEntries(Object.entries(DEFAULT_REMINDER_TIMES)
+            .map(([key, fallback]) => [key, getSetting(key, fallback)]));
+        const expressions = buildReminderSchedules(times);
+        this.cronJobs.forEach(job => job.destroy());
+        this.cronJobs = [];
+
+        const dailyJob = cron.schedule(expressions.DAILY_EMAIL_TIME, () => {
+            console.log(`[Scheduler] 触发每日日志检查提醒 (${times.DAILY_EMAIL_TIME})`);
+            return this.checkAndSendReminder('daily');
         });
 
-        // 2. 每周五晚九点提醒 (21:00)
-        const weeklyJob = cron.schedule('0 21 * * 5', () => {
-            console.log('[Scheduler] 触发每周日志检查提醒 (周五 21:00)');
-            this.checkAndSendReminder('weekly');
+        const weeklyJob = cron.schedule(expressions.WEEKLY_EMAIL_TIME, () => {
+            console.log(`[Scheduler] 触发每周日志检查提醒 (周五 ${times.WEEKLY_EMAIL_TIME})`);
+            return this.checkAndSendReminder('weekly');
         });
 
         this.cronJobs.push(dailyJob, weeklyJob);
@@ -49,7 +54,7 @@ class SchedulerService {
                 ? getSetting('DAILY_EMAIL_ENABLED') 
                 : getSetting('WEEKLY_EMAIL_ENABLED');
             
-            if (!emailEnabled) {
+            if (emailEnabled !== true && emailEnabled !== 'true') {
                 console.log(`[Scheduler] ${type} 邮件提醒未开启，跳过`);
                 return;
             }

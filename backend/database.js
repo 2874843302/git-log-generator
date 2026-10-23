@@ -77,6 +77,24 @@ function setSetting(key, value) {
     }
 }
 
+function setSettings(settings) {
+    if (!db) {
+        throw new Error('数据库尚未初始化，无法保存配置');
+    }
+    const stmt = db.prepare(`
+        INSERT INTO settings (key, value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = CURRENT_TIMESTAMP
+    `);
+    db.transaction(() => {
+        Object.entries(settings).forEach(([key, value]) => {
+            stmt.run(key, JSON.stringify(value));
+        });
+    })();
+}
+
 /**
  * 获取所有设置
  * @returns {Object}
@@ -103,5 +121,6 @@ module.exports = {
     initDatabase,
     getSetting,
     setSetting,
+    setSettings,
     getAllSettings
 };

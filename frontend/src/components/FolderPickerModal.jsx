@@ -9,7 +9,8 @@ const FolderPickerModal = ({
   onSelect, 
   initialPath, 
   title = "选择文件夹",
-  originPos = null
+  originPos = null,
+  showRepoMode = false
 }) => {
   // 计算点击位置相对于屏幕中心的偏移量
   const offset = useMemo(() => {
@@ -26,6 +27,17 @@ const FolderPickerModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [wholeRepo, setWholeRepo] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+
+  const handleSelect = async () => {
+    setSelecting(true);
+    try {
+      await onSelect(selectedPath || currentPath, { wholeRepo });
+    } finally {
+      setSelecting(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -265,6 +277,18 @@ const FolderPickerModal = ({
         </div>
 
         {/* Footer */}
+        {showRepoMode && (
+          <label className="px-6 py-3 border-t border-gray-100 flex items-center gap-2 text-sm text-gray-700 shrink-0 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={wholeRepo}
+              onChange={e => setWholeRepo(e.target.checked)}
+              disabled={selecting}
+              className="w-4 h-4 accent-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
+            />
+            作为整个仓库添加
+          </label>
+        )}
         <div className="p-6 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-gray-100 shadow-sm max-w-full sm:max-w-[320px]">
             <div className="w-6 h-6 bg-green-50 text-green-500 rounded-lg flex items-center justify-center shrink-0">
@@ -283,11 +307,11 @@ const FolderPickerModal = ({
               取消
             </button>
             <button 
-              onClick={() => onSelect(selectedPath || currentPath)}
-              disabled={!selectedPath && !currentPath}
+              onClick={handleSelect}
+              disabled={selecting || (!selectedPath && !currentPath)}
               className="flex-1 sm:flex-none px-8 py-3 bg-blue-600 text-white text-sm font-black rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
-              确认选择
+              {selecting ? '正在添加...' : '确认选择'}
             </button>
           </div>
         </div>

@@ -1,11 +1,5 @@
 const { templates } = require('../constants/templates');
 
-/**
- * DeepSeek V4 可选模型列表
- * - deepseek-v4-flash: 快速、低成本（适合日常日志生成）
- * - deepseek-v4-pro: 高质量、高成本（适合复杂分析/述职等场景）
- */
-const DEEPSEEK_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro'];
 const DEFAULT_MODEL = 'deepseek-v4-flash';
 
 /**
@@ -290,9 +284,9 @@ ${includeHours ? '6. **八小时制（强制）**：所有组标题耗时（--Xh
 6. 禁止写代码实现细节；结尾必须给出下一阶段计划与资源诉求（如跨团队配合、排期、依赖支持）。`
         : '';
 
-    // 4. 调用 API（DeepSeek V4）
+    // 4. 调用 DeepSeek API
     try {
-        console.log('正在调用 DeepSeek V4 API...', { model, logCount: logs.length });
+        console.log('正在调用 DeepSeek API...', { model, logCount: logs.length });
         const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -549,6 +543,5 @@ module.exports = {
     generateAILog,
     chatWithAssistant,
     getApiUsageStats,
-    DEEPSEEK_MODELS,
     DEFAULT_MODEL
 };

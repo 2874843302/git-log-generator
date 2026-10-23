@@ -54,14 +54,22 @@ function expandMonorepo(repoRoot) {
     return projects.length >= 2 ? projects : [];
 }
 
+function normalizeRepoPath(repoPath) {
+    const resolved = path.resolve(repoPath);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 /**
- * 选择最外层目录时自动识别内部仓库/项目：
- * - 选中目录本身是 git 仓库：多项目则展开为子项目列表，否则返回自身
- * - 选中目录不是仓库：递归（深度3）查找内部 git 仓库，monorepo 同样展开
+ * Discover repositories and expand their projects unless the root is configured as a whole repository.
  * @returns {Promise<{repos: string[], monorepo: boolean}>}
  */
-async function detectRepos(rootPath) {
-    if (await isGitRepo(rootPath)) {
+async function detectRepos(rootPath, { wholeRepoPaths = [] } = {}) {
+    const wholeRoots = new Set(wholeRepoPaths.map(normalizeRepoPath));
+    const gitRoot = await getRepoRoot(rootPath);
+    if (gitRoot && (hasGitDir(rootPath) || wholeRoots.has(normalizeRepoPath(gitRoot)))) {
+        if (wholeRoots.has(normalizeRepoPath(gitRoot))) {
+            return { repos: [gitRoot], monorepo: false };
+        }
         const projects = expandMonorepo(rootPath);
         return { repos: projects.length > 0 ? projects : [rootPath], monorepo: projects.length > 0 };
     }
@@ -70,7 +78,7 @@ async function detectRepos(rootPath) {
     const walk = (dir, depth) => {
         if (depth > 4 || found.length >= 100) return;
         if (hasGitDir(dir)) {
-            const projects = expandMonorepo(dir);
+            const projects = wholeRoots.has(normalizeRepoPath(dir)) ? [] : expandMonorepo(dir);
             if (projects.length > 0) found.push(...projects);
             else found.push(dir);
             return; // 已是仓库根，不再下钻
@@ -80,6 +88,10 @@ async function detectRepos(rootPath) {
         }
     };
     walk(rootPath, 0);
+    if (found.length === 0 && gitRoot) {
+        const projects = expandMonorepo(rootPath);
+        return { repos: projects.length > 0 ? projects : [rootPath], monorepo: projects.length > 0 };
+    }
     return { repos: found, monorepo: false };
 }
 

@@ -46,21 +46,20 @@ const SettingsModal = ({
   updateDailyEmailEnabled,
   weeklyEmailEnabled,
   updateWeeklyEmailEnabled,
+  dailyEmailTime,
+  weeklyEmailTime,
+  updateReminderTimes,
   initEnv,
   loading,
   originPos,
   autoLaunchEnabled,
   updateAutoLaunchEnabled,
   smtpHost,
-  updateSmtpHost,
   smtpPort,
-  updateSmtpPort,
   smtpUser,
-  updateSmtpUser,
   smtpPass,
-  updateSmtpPass,
   fromName,
-  updateFromName
+  updateSmtpConfig
 }) => {
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localDefaultUser, setLocalDefaultUser] = useState(defaultUser);
@@ -69,6 +68,10 @@ const SettingsModal = ({
   const [localXuexitongPassword, setLocalXuexitongPassword] = useState(xuexitongPassword);
   const [localBrowserPath, setLocalBrowserPath] = useState(browserPath);
   const [localDeepseekModel, setLocalDeepseekModel] = useState(deepseekModel);
+  const [modelSaveStatus, setModelSaveStatus] = useState({ loading: false, error: '', success: false });
+  const [localDailyEmailTime, setLocalDailyEmailTime] = useState(dailyEmailTime);
+  const [localWeeklyEmailTime, setLocalWeeklyEmailTime] = useState(weeklyEmailTime);
+  const [reminderSaveStatus, setReminderSaveStatus] = useState({ loading: false, error: '', success: false });
   const [localScheduleTime, setLocalScheduleTime] = useState(scheduleTime);
   const [localTitleTemplate, setLocalTitleTemplate] = useState(titleTemplate);
   const [localEmailAddress, setLocalEmailAddress] = useState(emailAddress || '');
@@ -78,6 +81,7 @@ const SettingsModal = ({
   const [localSmtpPass, setLocalSmtpPass] = useState(smtpPass || '');
   const [localFromName, setLocalFromName] = useState(fromName || '');
   const [showSmtpPass, setShowSmtpPass] = useState(false);
+  const [smtpSaveStatus, setSmtpSaveStatus] = useState({ loading: false, error: '', success: false });
   const [detectedBrowsers, setDetectedBrowsers] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -139,6 +143,9 @@ const SettingsModal = ({
   useEffect(() => {
     setLocalDeepseekModel(deepseekModel);
   }, [deepseekModel]);
+
+  useEffect(() => { setLocalDailyEmailTime(dailyEmailTime); }, [dailyEmailTime]);
+  useEffect(() => { setLocalWeeklyEmailTime(weeklyEmailTime); }, [weeklyEmailTime]);
 
   useEffect(() => {
     setLocalScheduleTime(scheduleTime);
@@ -255,12 +262,67 @@ const SettingsModal = ({
     updateEmailAddress(localEmailAddress);
   };
 
-  const handleSaveSmtp = () => {
-    updateSmtpHost(localSmtpHost);
-    updateSmtpPort(localSmtpPort);
-    updateSmtpUser(localSmtpUser);
-    updateSmtpPass(localSmtpPass);
-    updateFromName(localFromName);
+  const reminderTimesDirty = localDailyEmailTime !== dailyEmailTime || localWeeklyEmailTime !== weeklyEmailTime;
+
+  const handleSaveReminderTimes = async () => {
+    if (reminderSaveStatus.loading) return;
+    if (![localDailyEmailTime, localWeeklyEmailTime].every(time => /^([01]\d|2[0-3]):[0-5]\d$/.test(time))) {
+      setReminderSaveStatus({ loading: false, error: '请填写有效的每日和每周提醒时间', success: false });
+      return;
+    }
+    setReminderSaveStatus({ loading: true, error: '', success: false });
+    try {
+      await updateReminderTimes({ DAILY_EMAIL_TIME: localDailyEmailTime, WEEKLY_EMAIL_TIME: localWeeklyEmailTime });
+      setReminderSaveStatus({ loading: false, error: '', success: true });
+    } catch (err) {
+      setReminderSaveStatus({ loading: false, error: err.message || '保存提醒时间失败，请重试', success: false });
+    }
+  };
+
+  const handleSaveModel = async () => {
+    if (modelSaveStatus.loading) return;
+    const model = localDeepseekModel.trim();
+    if (!model) {
+      setModelSaveStatus({ loading: false, error: '模型名称不能为空', success: false });
+      return;
+    }
+    setModelSaveStatus({ loading: true, error: '', success: false });
+    try {
+      await updateDeepseekModel(model);
+      setLocalDeepseekModel(model);
+      setModelSaveStatus({ loading: false, error: '', success: true });
+    } catch (err) {
+      setModelSaveStatus({ loading: false, error: err.message || '保存模型失败，请重试', success: false });
+    }
+  };
+
+  const smtpDirty = localSmtpHost !== smtpHost ||
+    Number(localSmtpPort) !== Number(smtpPort) ||
+    localSmtpUser !== smtpUser || localSmtpPass !== smtpPass || localFromName !== fromName;
+
+  const handleSaveSmtp = async () => {
+    if (smtpSaveStatus.loading) return;
+    const port = Number(localSmtpPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      setSmtpSaveStatus({ loading: false, error: '请输入 1 到 65535 之间的有效端口', success: false });
+      return;
+    }
+    setSmtpSaveStatus({ loading: true, error: '', success: false });
+    try {
+      await updateSmtpConfig({
+        SMTP_HOST: localSmtpHost.trim(),
+        SMTP_PORT: port,
+        SMTP_USER: localSmtpUser.trim(),
+        SMTP_PASS: localSmtpPass,
+        FROM_NAME: localFromName.trim()
+      });
+      setLocalSmtpHost(localSmtpHost.trim());
+      setLocalSmtpUser(localSmtpUser.trim());
+      setLocalFromName(localFromName.trim());
+      setSmtpSaveStatus({ loading: false, error: '', success: true });
+    } catch (err) {
+      setSmtpSaveStatus({ loading: false, error: err.message || '保存服务器配置失败，请重试', success: false });
+    }
   };
 
   const handleTestEmail = async () => {
@@ -510,34 +572,33 @@ const SettingsModal = ({
                       保存密钥配置
                     </button>
 
-                    {/* DeepSeek V4 模型选择 */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5">
+                      <label htmlFor="deepseek-model" className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5">
                         <Cpu size={11} />
-                        AI 模型选择 (DeepSeek V4)
+                        AI 模型 · DeepSeek
                       </label>
                       <div className="flex items-center gap-2">
-                        <select
+                        <input
+                          id="deepseek-model"
+                          type="text"
                           value={localDeepseekModel}
-                          onChange={(e) => {
-                            setLocalDeepseekModel(e.target.value);
-                            updateDeepseekModel(e.target.value);
-                          }}
-                          className="flex-1 px-4 py-2.5 bg-white border border-indigo-100 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 appearance-none cursor-pointer"
+                          onChange={e => setLocalDeepseekModel(e.target.value)}
+                          disabled={modelSaveStatus.loading}
+                          placeholder="输入模型名称"
+                          className="min-w-0 flex-1 px-4 py-2.5 bg-white border border-indigo-100 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button
+                          onClick={handleSaveModel}
+                          disabled={modelSaveStatus.loading || localDeepseekModel === deepseekModel}
+                          aria-label="保存模型"
+                          title="保存模型"
+                          className="p-2.5 rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-40"
                         >
-                          <option value="deepseek-v4-flash">V4-Flash（快速·低成本）</option>
-                          <option value="deepseek-v4-pro">V4-Pro（高质量·高成本）</option>
-                        </select>
+                          {modelSaveStatus.loading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                        </button>
                       </div>
-                      <div className="bg-indigo-50/40 border border-indigo-50 rounded-lg px-3 py-2">
-                        <p className="text-[9px] text-gray-500 leading-relaxed">
-                          {localDeepseekModel === 'deepseek-v4-pro' ? (
-                            <><b>V4-Pro</b>：适合述职报告、KPI 自述等复杂场景，推理更深，价格约为 Flash 的 3 倍。</>
-                          ) : (
-                            <><b>V4-Flash</b>：日常日志生成推荐，速度快、成本低。聊天助手自动启用 thinking 模式。</>
-                          )}
-                        </p>
-                      </div>
+                      {modelSaveStatus.error && <p role="alert" className="text-xs text-red-600 break-words">{modelSaveStatus.error}</p>}
+                      {modelSaveStatus.success && localDeepseekModel === deepseekModel && <p role="status" className="text-xs text-green-600">模型已保存</p>}
                     </div>
 
                     <div className="bg-indigo-50/30 border border-indigo-100 rounded-xl p-3 space-y-2">
@@ -912,10 +973,14 @@ const SettingsModal = ({
                       <div className="flex items-center justify-between">
                         <div className="space-y-0.5">
                           <span className="text-[11px] font-bold text-gray-700 block">每日未完成提醒</span>
-                          <p className="text-[9px] text-gray-400">每天 20:00 检查，若未同步则发送邮件</p>
+                          <label htmlFor="daily-email-time" className="sr-only">每日提醒时间</label>
+                          <input id="daily-email-time" type="time" value={localDailyEmailTime}
+                            onChange={e => setLocalDailyEmailTime(e.target.value)} disabled={reminderSaveStatus.loading}
+                            className="mt-1 px-2 py-1 bg-white border border-indigo-100 rounded-md text-xs focus:ring-2 focus:ring-indigo-500/20" />
                         </div>
                         <button 
                           onClick={() => updateDailyEmailEnabled(!dailyEmailEnabled)}
+                          role="switch" aria-label="每日未完成提醒" aria-checked={dailyEmailEnabled}
                           className={`w-10 h-5 rounded-full relative transition-colors ${dailyEmailEnabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
                         >
                           <motion.div 
@@ -928,10 +993,17 @@ const SettingsModal = ({
                       <div className="flex items-center justify-between">
                         <div className="space-y-0.5">
                           <span className="text-[11px] font-bold text-gray-700 block">每周未完成提醒</span>
-                          <p className="text-[9px] text-gray-400">每周五 21:00 检查本周缺失，若有则发送邮件</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-500">周五</span>
+                            <label htmlFor="weekly-email-time" className="sr-only">每周提醒时间</label>
+                            <input id="weekly-email-time" type="time" value={localWeeklyEmailTime}
+                              onChange={e => setLocalWeeklyEmailTime(e.target.value)} disabled={reminderSaveStatus.loading}
+                              className="px-2 py-1 bg-white border border-indigo-100 rounded-md text-xs focus:ring-2 focus:ring-indigo-500/20" />
+                          </div>
                         </div>
                         <button 
                           onClick={() => updateWeeklyEmailEnabled(!weeklyEmailEnabled)}
+                          role="switch" aria-label="每周未完成提醒" aria-checked={weeklyEmailEnabled}
                           className={`w-10 h-5 rounded-full relative transition-colors ${weeklyEmailEnabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
                         >
                           <motion.div 
@@ -940,6 +1012,13 @@ const SettingsModal = ({
                           />
                         </button>
                       </div>
+                      <button onClick={handleSaveReminderTimes} disabled={reminderSaveStatus.loading || !reminderTimesDirty}
+                        className="w-full py-2 rounded-lg text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 flex items-center justify-center gap-2">
+                        {reminderSaveStatus.loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                        {reminderSaveStatus.loading ? '正在保存...' : '保存提醒时间'}
+                      </button>
+                      {reminderSaveStatus.error && <p role="alert" className="text-xs text-red-600 break-words">{reminderSaveStatus.error}</p>}
+                      {reminderSaveStatus.success && !reminderTimesDirty && <p role="status" className="text-xs text-green-600">提醒时间已保存</p>}
                     </div>
                   </div>
                 </section>
@@ -961,7 +1040,7 @@ const SettingsModal = ({
                     <Mail size={14} />
                     <span>SMTP 发件服务器配置</span>
                   </div>
-                  <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 space-y-4">
+                  <fieldset disabled={smtpSaveStatus.loading} className="min-w-0 bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-bold text-indigo-600 uppercase">SMTP 服务器</label>
@@ -978,7 +1057,10 @@ const SettingsModal = ({
                         <input 
                           type="number"
                           value={localSmtpPort}
-                          onChange={(e) => setLocalSmtpPort(parseInt(e.target.value))}
+                          onChange={(e) => setLocalSmtpPort(e.target.value)}
+                          min="1"
+                          max="65535"
+                          step="1"
                           placeholder="465"
                           className="w-full px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                         />
@@ -1028,23 +1110,24 @@ const SettingsModal = ({
 
                     <button 
                       onClick={handleSaveSmtp}
-                      disabled={
-                        localSmtpHost === smtpHost && 
-                        localSmtpPort === smtpPort && 
-                        localSmtpUser === smtpUser && 
-                        localSmtpPass === smtpPass && 
-                        localFromName === fromName
-                      }
+                      disabled={smtpSaveStatus.loading || !smtpDirty}
+                      aria-busy={smtpSaveStatus.loading}
                       className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                        (localSmtpHost === smtpHost && localSmtpPort === smtpPort && localSmtpUser === smtpUser && localSmtpPass === smtpPass && localFromName === fromName)
+                        (smtpSaveStatus.loading || !smtpDirty)
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
                           : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20'
                       }`}
                     >
-                      <Check size={16} />
-                      保存服务器配置
+                      {smtpSaveStatus.loading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                      {smtpSaveStatus.loading ? '正在保存...' : '保存服务器配置'}
                     </button>
-                  </div>
+                    {smtpSaveStatus.error && (
+                      <p role="alert" className="text-xs text-red-600 break-words">{smtpSaveStatus.error}</p>
+                    )}
+                    {smtpSaveStatus.success && !smtpDirty && (
+                      <p role="status" className="text-xs text-green-600">服务器配置已保存</p>
+                    )}
+                  </fieldset>
                 </section>
               </motion.div>
             )}

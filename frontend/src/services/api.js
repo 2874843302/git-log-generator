@@ -23,6 +23,7 @@ const api = {
   isGitRepo: (path) => window.electron.invoke('api:isGitRepo', { path }),
   filterGitRepos: (paths) => window.electron.invoke('api:filterGitRepos', { paths }),
   detectRepos: (path) => window.electron.invoke('api:detectRepos', { path }),
+  setRepoMode: (data) => window.electron.invoke('api:setRepoMode', data),
   getRepoRoots: (paths) => window.electron.invoke('api:getRepoRoots', { paths }),
 
   // AI & 模版相关
