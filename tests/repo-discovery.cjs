@@ -54,8 +54,10 @@ async function run() {
     execFileSync('git', ['-C', alpha, 'worktree', 'add', '--quiet', '--detach', worktree]);
     assert.equal(fs.statSync(path.join(worktree, '.git')).isFile(), true);
     assert.deepEqual(sorted((await gitService.detectRepos(workspace, { wholeRepoPaths: [worktree] })).repos),
-      sorted([path.join(alpha, 'client'), path.join(alpha, 'server'), path.join(beta, 'client'), path.join(beta, 'server'), worktree]));
-    console.log('PASS: worktrees using a .git file support whole-repository mode');
+      sorted([path.join(alpha, 'client'), path.join(alpha, 'server'), path.join(beta, 'client'), path.join(beta, 'server')]));
+    assert.deepEqual((await gitService.detectRepos(worktree)).repos, []);
+    assert.equal(await gitService.isGitRepo(worktree), false);
+    console.log('PASS: linked worktrees are excluded from repository discovery and validation');
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }

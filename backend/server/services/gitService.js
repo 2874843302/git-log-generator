@@ -37,6 +37,25 @@ function hasGitDir(dir) {
     }
 }
 
+// Git linked worktrees have a .git file pointing into the main repository's
+// .git/worktrees directory. They are checkouts, not independent repositories
+// that should appear in the repository picker.
+function isLinkedWorktree(dir) {
+    try {
+        const gitPath = path.join(dir, '.git');
+        if (!fs.statSync(gitPath).isFile()) return false;
+
+        const content = fs.readFileSync(gitPath, 'utf8').trim();
+        const match = /^gitdir:\s*(.+)$/im.exec(content);
+        if (!match) return false;
+
+        const gitDir = path.resolve(dir, match[1].trim()).replace(/\\/g, '/').toLowerCase();
+        return /\/\.git\/worktrees(?:\/|$)/.test(gitDir);
+    } catch (e) {
+        return false;
+    }
+}
+
 /**
  * monorepo 展开：仓库根目录下带项目标记文件的子目录（两层内），>=2 个才认为是多项目
  */
@@ -64,6 +83,10 @@ function normalizeRepoPath(repoPath) {
  * @returns {Promise<{repos: string[], monorepo: boolean}>}
  */
 async function detectRepos(rootPath, { wholeRepoPaths = [] } = {}) {
+    if (isLinkedWorktree(rootPath)) {
+        return { repos: [], monorepo: false };
+    }
+
     const wholeRoots = new Set(wholeRepoPaths.map(normalizeRepoPath));
     const gitRoot = await getRepoRoot(rootPath);
     if (gitRoot && (hasGitDir(rootPath) || wholeRoots.has(normalizeRepoPath(gitRoot)))) {
@@ -77,6 +100,7 @@ async function detectRepos(rootPath, { wholeRepoPaths = [] } = {}) {
     const found = [];
     const walk = (dir, depth) => {
         if (depth > 4 || found.length >= 100) return;
+        if (isLinkedWorktree(dir)) return;
         if (hasGitDir(dir)) {
             const projects = wholeRoots.has(normalizeRepoPath(dir)) ? [] : expandMonorepo(dir);
             if (projects.length > 0) found.push(...projects);
@@ -218,6 +242,7 @@ async function enrichLogs(repoPathsMap, logs, includeDiffContent) {
  */
 async function isGitRepo(repoPath) {
     try {
+        if (isLinkedWorktree(repoPath)) return false;
         return await simpleGit(repoPath).checkIsRepo();
     } catch (error) {
         return false;
