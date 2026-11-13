@@ -186,7 +186,12 @@ async function getGitLogs(repoPath, startDate, endDate, author, branches) {
     const pathSpec = await getSubPathSpec(git, repoPath);
 
     try {
-        const logs = await git.log([...filteredOptions, ...args, ...pathSpec]);
+        const logs = await git.log([...filteredOptions, ...args, ...pathSpec], {
+            format: {
+                hash: '%H', date: '%aI', completedAt: '%cI', message: '%s',
+                refs: '%D', body: '%b', author_name: '%aN', author_email: '%aE'
+            }
+        });
         return logs.all;
     } catch (error) {
         throw new Error(`无法读取 Git 记录: ${error.message}`);

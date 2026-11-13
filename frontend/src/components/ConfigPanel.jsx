@@ -247,7 +247,7 @@ const ConfigPanel = ({
                             onClick={() => autoFillLogs('average')}
                             disabled={loading || selectedMissingDates.length === 0}
                             className="flex-1 py-1.5 rounded-lg bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-700 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-sm"
-                            title="将提交平均分配到已勾选的日期"
+                            title="按任务完成时间顺序，依据内容量均衡分配到已勾选日期；重复任务仅分配一次"
                           >
                             平均分配
                           </button>

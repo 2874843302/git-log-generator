@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from './services/api';
+import { splitLogsByWorkload, findRepeatedWorkItems } from './lib/logAllocation.js';
 import dayjs from 'dayjs';
 import { GitCommit, AlertCircle, Clock, RefreshCw, ExternalLink } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -94,70 +95,8 @@ import SettingsModal from './components/SettingsModal';
 import FoolModeModal from './components/FoolModeModal';
 import ChatBot from './components/ChatBot';
 
-function getLogWorkload(log) {
-  const statText = log.diffStat || '';
-  const insertions = Number(statText.match(/(\d+) insertion/)?.[1] || 0);
-  const deletions = Number(statText.match(/(\d+) deletion/)?.[1] || 0);
-  const changedFiles = Number(statText.match(/(\d+) files? changed/)?.[1] || 0);
-  const textLength = [log.message, log.body, statText, log.diffContent]
-    .filter(value => typeof value === 'string')
-    .join('\n')
-    .trim()
-    .length;
-
-  // Prefer actual change volume; text length provides a fallback when stats are unavailable.
-  return Math.max(1, insertions + deletions + changedFiles * 10, Math.ceil(textLength / 80));
-}
-
-function splitLogsByWorkload(logs, dates) {
-  // 强制时间顺序：提交按日期升序、缺失日期升序；
-  // 分配时按序连续切片，先发生的提交只会分到更早的日期，绝不会颠倒时间线
-  const chronological = [...logs].sort((a, b) => {
-    const diff = new Date(a.date) - new Date(b.date);
-    return diff || String(a.hash || '').localeCompare(String(b.hash || ''));
-  });
-  const sortedDates = [...dates].sort();
-  const weightedLogs = chronological.map(log => ({ log, weight: getLogWorkload(log) }));
-  const totalWorkload = weightedLogs.reduce((total, item) => total + item.weight, 0);
-  const groups = [];
-  let logIndex = 0;
-  let remainingWorkload = totalWorkload;
-
-  sortedDates.forEach((date, dateIndex) => {
-    const remainingDays = sortedDates.length - dateIndex;
-    if (dateIndex === sortedDates.length - 1) {
-      groups.push({ date, logs: weightedLogs.slice(logIndex).map(item => item.log) });
-      return;
-    }
-
-    const targetWorkload = remainingWorkload / remainingDays;
-    const dayLogs = [];
-    let dayWorkload = 0;
-
-    while (logIndex < weightedLogs.length) {
-      const nextLog = weightedLogs[logIndex];
-      const logsLeftAfterNext = weightedLogs.length - logIndex - 1;
-      if (dayLogs.length > 0 && logsLeftAfterNext < remainingDays - 1) break;
-
-      if (dayLogs.length > 0) {
-        const currentDistance = Math.abs(targetWorkload - dayWorkload);
-        const nextDistance = Math.abs(targetWorkload - (dayWorkload + nextLog.weight));
-        if (nextDistance > currentDistance) break;
-      }
-
-      dayLogs.push(nextLog.log);
-      dayWorkload += nextLog.weight;
-      remainingWorkload -= nextLog.weight;
-      logIndex += 1;
-    }
-
-    groups.push({ date, logs: dayLogs });
-  });
-
-  return groups;
-}
-
 function App() {
+  const autoFillRunning = useRef(false);
   // 状态管理
   const [repoPaths, setRepoPaths] = useState([]);
   const [foolModeRepos, setFoolModeRepos] = useState([]); // 傻瓜模式选中的仓库列表
@@ -415,7 +354,8 @@ function App() {
     const isEvent = customLogs && customLogs.nativeEvent;
     const actualLogs = isEvent ? null : customLogs;
 
-    setLoading(true);
+    const isBatch = customOptions?.allocationContext != null;
+    if (!isBatch) setLoading(true);
     setError('');
     try {
       const targetLogs = actualLogs || logs.filter(log => !ignoredHashes.has(log.hash));
@@ -444,6 +384,7 @@ function App() {
         tomorrowPlanPrompt: isSupplementEnabled ? ((customOptions && customOptions.supplementPrompt !== undefined) ? customOptions.supplementPrompt : supplementPrompt) : '',
         referenceLog: selectedTemplate === 'custom' ? referenceLog : '',
         options: currentOptions,
+        targetDate: currentOptions.allocationContext?.targetDate,
         classicMode: dailyClassicMode,
         apiKey: apiKey // 确保传递 API Key
       });
@@ -462,9 +403,10 @@ function App() {
     } catch (err) {
       console.error('generateLog 捕获到错误:', err);
       setError(err.message || '生成日志失败，请检查 API 配置');
+      if (isBatch) throw err;
       return null;
     } finally {
-      setLoading(false);
+      if (!isBatch) setLoading(false);
     }
   }, [logs, ignoredHashes, selectedTemplate, repoPaths, customPrompt, supplementPrompt, referenceLog, templateOptions, apiKey, dailyClassicMode]);
 
@@ -595,9 +537,9 @@ function App() {
    * @param {string} mode - 补全模式: 'daily' (按天) 或 'average' (平均分配)
    */
   const handleAutoFillLogs = async (mode) => {
-    if (!missingLogDates || missingLogDates.length === 0 || loading) return;
+    if (!missingLogDates || missingLogDates.length === 0 || loading || autoFillRunning.current) return;
 
-    const datesToFill = selectedMissingDates.filter((d) => missingLogDates.includes(d)).sort();
+    const datesToFill = [...new Set(selectedMissingDates.filter((d) => missingLogDates.includes(d)))].sort();
     if (datesToFill.length === 0) {
       setError('请至少选中一天需要补全的日期');
       return;
@@ -619,6 +561,7 @@ function App() {
     setError('');
     
     const results = [];
+    autoFillRunning.current = true;
     
     try {
       let currentLogs = logs;
@@ -642,17 +585,7 @@ function App() {
         setLogs(currentLogs); // 同步更新主界面的日志列表
       }
 
-      let logsForAllocation = currentLogs;
-      if (mode === 'average' && currentLogs.length > 0) {
-        const enriched = await api.enrichGitLogs({
-          logs: currentLogs,
-          repoPaths,
-          includeDiffContent: false
-        });
-        logsForAllocation = enriched.logs || currentLogs;
-      }
-
-      const validLogs = logsForAllocation.filter(log => !ignoredHashes.has(log.hash));
+      const validLogs = currentLogs.filter(log => !ignoredHashes.has(log.hash));
       console.log(`[一键补全] 开始执行，模式: ${mode}，补全日期: ${datesToFill.length} 天，有效提交: ${validLogs.length} 条`);
       
       // 按日期分组日志 (用于 daily 模式)
@@ -678,13 +611,8 @@ function App() {
           fillData.push({ date: missDate, logs: dayLogs });
         }
       } else {
-        // 模式2: 平均分配 - 将所有提交平均分给选中的日期
-        // The API returns newest-first for display; distribute oldest commits first.
-        const chronologicalLogs = [...validLogs].sort((a, b) => {
-          const timeDifference = new Date(a.date) - new Date(b.date);
-          return timeDifference || String(a.hash).localeCompare(String(b.hash));
-        });
-        fillData.push(...splitLogsByWorkload(chronologicalLogs, datesToFill));
+        // 按完成时间连续切分，全局平衡任务描述内容量并去重。
+        fillData.push(...splitLogsByWorkload(validLogs, datesToFill));
       }
       
       // 串行生成 AI 日志内容（避免并行调用争抢共享状态）
@@ -697,10 +625,34 @@ function App() {
         }
 
         const formattedDate = `${item.date.substring(0, 4)}-${item.date.substring(4, 6)}-${item.date.substring(6, 8)}`;
-        const options = { ...templateOptions, includeTomorrow: false };
+        const options = {
+          ...templateOptions,
+          includeTomorrow: false,
+          ...(mode === 'average' ? { allocationContext: {
+            targetDate: formattedDate,
+            previousContents: generatedContents.filter(entry => entry.content).map(entry => ({ date: entry.date, content: entry.content })),
+            otherDayTasks: fillData.filter(entry => entry !== item).map(entry => ({
+              date: entry.date,
+              tasks: entry.logs.map(log => ({ repoName: log.repoName, message: log.message, body: log.body }))
+            }))
+          } } : {})
+        };
 
         try {
-          const content = await generateLog(item.logs, selectedTemplate, repoPaths, options);
+          let content = await generateLog(item.logs, selectedTemplate, repoPaths, options);
+          if (mode === 'average' && content) {
+            const prior = options.allocationContext.previousContents.map(entry => entry.content);
+            const repeated = findRepeatedWorkItems(content, prior);
+            if (repeated.length) {
+              content = await generateLog(item.logs, selectedTemplate, repoPaths, {
+                ...options,
+                allocationContext: { ...options.allocationContext, rejectedContent: content }
+              });
+              if (findRepeatedWorkItems(content, prior).length) {
+                throw new Error('生成内容仍有重复工作条目，已跳过该日期，请检查任务划分后重试');
+              }
+            }
+          }
           generatedContents.push({ date: formattedDate, content, error: null });
         } catch (err) {
           generatedContents.push({ date: formattedDate, content: null, error: err.message });
@@ -757,6 +709,7 @@ function App() {
       setError(`一键补全失败: ${err.message}`);
       playNotificationSound('failure');
     } finally {
+      autoFillRunning.current = false;
       setLoading(false);
     }
   };

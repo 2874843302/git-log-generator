@@ -207,7 +207,7 @@ ${conciseSuffix}列表从 1. 开始计数。`;
         const aliasTable = Object.entries(repoAliases).map(([name, alias]) => `- 原始名: ${name} -> 中文别名: ${alias}`).join('\n');
         const logDetails = logs.map(l => {
             const displayName = repoAliases[l.repoName] || l.repoName;
-            return `- [项目:${displayName}] ${l.date} [${l.author_name}]: ${l.message}\n  [变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`;
+            return `- [项目:${displayName}] ${l.completedAt || l.date} [${l.author_name}]: ${l.message}\n  ${l.body ? `[任务详情]: ${l.body}\n  ` : ''}[变更统计]: ${l.diffStat || '未开启'}\n  ${l.diffContent ? `[代码详情]:\n  ${l.diffContent}` : ''}`;
         }).join('\n');
         logContext = isDaily
             ? `以下是来自多个项目的提交记录详情。请按项目分组生成编号组；组标题的项目名**必须**使用中文别名（如有），严禁使用原始项目名；同一项目内相同功能或同一问题的多次提交合并为一条工作条目。
@@ -272,7 +272,21 @@ ${includeHours ? '6. **八小时制（强制）**：所有组标题耗时（--Xh
    - 使用 ### 作为板块标题。
    - 父级使用有序列表（1. 2. 3.），子级使用无序列表（ - ）且**严禁使用任何缩进**，所有列表项必须顶格。`;
 
-    const prompt = `${templatePrompt}${customPrompt ? `\n附加要求：${customPrompt}` : ''}\n\n${logContext}${isDaily ? dailyRules : genericRules}`;
+    const allocation = options?.allocationContext;
+    const allocationRules = allocation ? `
+
+【多日平均分配约束，优先于上述模板中的内容补足与多样化要求】
+目标日志日期：${allocation.targetDate}。本次提交详情是唯一可写的工作素材，已按完成时间连续分配。
+1. 仅总结本日分配的具体任务，保持完成时间顺序，不把其他日期的事项提前或重复写入本日。
+2. 同一任务合并一次；不同阶段只有本日素材明确提到时才能写。不得自动补写需求梳理、自测、会议、学习等凑数事项。
+3. 内容少就如实少写，不为凑满八小时、三条或格式示例虚构工作。参考日志与其他日期内容仅作格式/去重参考，不得照抄其事项。
+4. 若同一功能跨日推进，只写本日新增的具体变化，不重复宣称已经完成的部分。
+其他日期的任务（仅用于边界判断，禁止作为本日素材）：
+${JSON.stringify(allocation.otherDayTasks || [])}
+已经生成的日志（仅供去重）：
+${JSON.stringify(allocation.previousContents || [])}
+${allocation.rejectedContent ? `上次生成存在重复，请重新概括本日真实工作并消除重复：\n${allocation.rejectedContent}` : ''}` : '';
+    const prompt = `${templatePrompt}${customPrompt ? `\n附加要求：${customPrompt}` : ''}\n\n${logContext}${isDaily ? dailyRules : genericRules}${allocationRules}`;
 
     const businessFirstPrompt = templateKey === 'briefing'
         ? `\n\n**述职补充约束（面向领导，强制）**：
