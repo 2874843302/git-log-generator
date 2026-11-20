@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from './services/api';
-import { splitLogsByWorkload, findRepeatedWorkItems } from './lib/logAllocation.js';
+import { splitLogsByWorkload } from './lib/logAllocation.js';
+import { removeRepeatedWorkItems, rebalanceGeneratedContents } from './lib/logContent.js';
 import { isMergeCommit, getDefaultIgnoredHashes } from './lib/logSelection.js';
 import dayjs from 'dayjs';
 import { GitCommit, AlertCircle, Clock, RefreshCw, ExternalLink } from 'lucide-react';
@@ -644,31 +645,40 @@ function App() {
 
         try {
           let content = await generateLog(item.logs, selectedTemplate, repoPaths, options);
+          let needsRedistribution = false;
           if (mode === 'average' && content) {
             const prior = options.allocationContext.previousContents.map(entry => entry.content);
-            const repeated = findRepeatedWorkItems(content, prior);
-            if (repeated.length) {
-              content = await generateLog(item.logs, selectedTemplate, repoPaths, {
-                ...options,
-                allocationContext: { ...options.allocationContext, rejectedContent: content }
-              });
-              if (findRepeatedWorkItems(content, prior).length) {
-                throw new Error('生成内容仍有重复工作条目，已跳过该日期，请检查任务划分后重试');
+            let cleaned = removeRepeatedWorkItems(content, prior);
+            // 部分重复只移除重复条目，保留本日有效内容，不用整天重试覆盖它。
+            if (!cleaned.content && cleaned.removedCount) {
+              try {
+                const regenerated = await generateLog(item.logs, selectedTemplate, repoPaths, {
+                  ...options,
+                  allocationContext: { ...options.allocationContext, rejectedContent: content }
+                });
+                cleaned = removeRepeatedWorkItems(regenerated, prior);
+              } catch (retryError) {
+                console.error('[一键补全] 重复内容重试失败，继续整批重新分配:', retryError);
               }
+              // 全部重复时交给整批任务重新均衡，继续生成后续日期。
+              needsRedistribution = !cleaned.content;
             }
+            content = cleaned.content;
           }
-          generatedContents.push({ date: formattedDate, content, error: null });
+          generatedContents.push({ date: formattedDate, content, error: null, needsRedistribution });
         } catch (err) {
           generatedContents.push({ date: formattedDate, content: null, error: err.message });
         }
       }
       console.log(`[一键补全] AI 内容生成完毕 (共 ${generatedContents.length} 份)`);
       
+      const contentsToSync = mode === 'average' ? rebalanceGeneratedContents(generatedContents) : generatedContents;
+
       // 串行同步到学习通 (保持串行以避免并发冲突)
       console.log('[一键补全] 正在串行同步到学习通...');
-      const totalToSync = generatedContents.filter(i => i.content).length;
+      const totalToSync = contentsToSync.filter(i => i.content).length;
       let syncSeq = 0;
-      for (const item of generatedContents) {
+      for (const item of contentsToSync) {
         if (item.content) {
           syncSeq += 1;
           api.showNotification({
