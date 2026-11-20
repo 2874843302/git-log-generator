@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from './services/api';
 import { splitLogsByWorkload, findRepeatedWorkItems } from './lib/logAllocation.js';
+import { isMergeCommit, getDefaultIgnoredHashes } from './lib/logSelection.js';
 import dayjs from 'dayjs';
 import { GitCommit, AlertCircle, Clock, RefreshCw, ExternalLink } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -585,7 +586,10 @@ function App() {
         setLogs(currentLogs); // 同步更新主界面的日志列表
       }
 
-      const validLogs = currentLogs.filter(log => !ignoredHashes.has(log.hash));
+      // 自动补全重新查询后立即使用本次默认忽略集，不能等待 React 状态更新。
+      const allocationIgnoredHashes = getDefaultIgnoredHashes(currentLogs, ignoredHashes);
+      setIgnoredHashes(allocationIgnoredHashes);
+      const validLogs = currentLogs.filter(log => !allocationIgnoredHashes.has(log.hash));
       console.log(`[一键补全] 开始执行，模式: ${mode}，补全日期: ${datesToFill.length} 天，有效提交: ${validLogs.length} 条`);
       
       // 按日期分组日志 (用于 daily 模式)
@@ -793,8 +797,12 @@ function App() {
         });
         fetchedLogs = fetchedLogsRes?.logs || [];
         setLogs(fetchedLogs);
+        const defaultIgnored = getDefaultIgnoredHashes(fetchedLogs);
+        setIgnoredHashes(defaultIgnored);
+        fetchedLogs = fetchedLogs.filter(log => !defaultIgnored.has(log.hash));
       } else {
         setLogs([]);
+        setIgnoredHashes(new Set());
       }
 
       const foolModeOptions = customOptions || {
@@ -1393,6 +1401,7 @@ function App() {
     try {
       const res = await api.getGitLogs(params);
       setLogs(res.logs);
+      setIgnoredHashes(getDefaultIgnoredHashes(res.logs));
       if (res.logs.length > 0) {
         setActiveTab('viz');
         return res.logs; // 返回 logs 供链式调用
@@ -1422,11 +1431,7 @@ function App() {
     const newIgnored = new Set(ignoredHashes);
     
     // 找出所有合并提交
-    const mergeLogs = logs.filter(log => 
-      log.message.toLowerCase().startsWith('merge ') || 
-      log.message.toLowerCase().includes('merge branch') ||
-      log.message.toLowerCase().includes('merge pull request')
-    );
+    const mergeLogs = logs.filter(isMergeCommit);
 
     if (mergeLogs.length === 0) return;
 

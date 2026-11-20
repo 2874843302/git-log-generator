@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { splitLogsByWorkload, findRepeatedWorkItems } from '../frontend/src/lib/logAllocation.js';
+import { getDefaultIgnoredHashes } from '../frontend/src/lib/logSelection.js';
 
 const require = createRequire(import.meta.url);
 // Execute the actual orchestration closure with fixture IPC dependencies, never syncing a real account.
@@ -15,6 +16,10 @@ const dates = ['20261101', '20261102', '20261103'];
 const logs = dates.map((date, index) => ({
   hash: String(index), repoName: '项目A', message: `独立功能事项${index}开发`, date: `2026-11-0${index + 1}T10:00:00+08:00`
 }));
+logs.push(...dates.map((date, index) => ({
+  hash: `merge-${index}`, repoName: '项目A', message: '自定义合并标题', parents: 'parent-a parent-b',
+  date: `2026-11-0${index + 1}T12:00:00+08:00`
+})));
 const output = text => `1\\. 项目A: 已完成--8h\n\n功能优化: ${text}`;
 const first = output('完善用户登录权限校验逻辑');
 const second = output('处理课程目录展示顺序错误');
@@ -29,7 +34,8 @@ const context = {
   missingLogDates: dates, selectedMissingDates: [...dates, dates[0]], loading: false,
   fillStartDate: '', fillEndDate: '', repoPaths: ['fixture'], logs: [], defaultUser: '',
   ignoredHashes: new Set(), selectedTemplate: 'daily', templateOptions: {}, autoFillRunning,
-  splitLogsByWorkload, findRepeatedWorkItems, dayjs: require('dayjs'),
+  splitLogsByWorkload, findRepeatedWorkItems, getDefaultIgnoredHashes, dayjs: require('dayjs'),
+  setIgnoredHashes: value => { context.ignoredHashes = value; },
   setLoading: value => loadingChanges.push(value), setError: () => {}, setLogs: () => {},
   console: { log() {}, error() {} }, setTimeout: callback => callback(), playNotificationSound() {},
   api: { getGitLogs: async () => { fetchCount += 1; return { logs }; }, showNotification: notice => notices.push(notice) },
@@ -53,4 +59,18 @@ assert.equal(autoFillRunning.current, false);
 assert.deepEqual(loadingChanges, [true, false]);
 assert.match(notices.at(-1).body, /成功补全 2 天日志，失败 1 天/);
 assert.match(notices.at(-1).body, /仍有重复/);
+assert.ok(calls.every(call => call.entries.every(entry => !entry.hash.startsWith('merge-'))));
+assert.equal(context.ignoredHashes.size, 3);
 console.log('PASS: real batch orchestration, date deduplication, reentry lock, context, retry and blocked duplicate sync');
+
+calls.length = 0;
+context.ignoredHashes = new Set();
+context.generateLog = async (entries, _template, _repos, options) => {
+  calls.push({ entries, options });
+  return second;
+};
+await run('daily');
+assert.equal(calls.length, 3);
+assert.ok(calls.every(call => call.entries.length === 1 && !call.entries[0].hash.startsWith('merge-')));
+assert.equal(context.ignoredHashes.size, 3);
+console.log('PASS: average and daily auto-fill default to ignoring merges, including fresh queries');

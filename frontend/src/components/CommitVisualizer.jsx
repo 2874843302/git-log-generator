@@ -1,5 +1,6 @@
 import React from 'react';
 import dayjs from 'dayjs';
+import { isMergeCommit } from '../lib/logSelection.js';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -31,11 +32,7 @@ const CommitVisualizer = ({
     return `${offset}天前`;
   };
   const isAllMergesIgnored = () => {
-    const mergeLogs = logs.filter(log => 
-      log.message.toLowerCase().startsWith('merge ') || 
-      log.message.toLowerCase().includes('merge branch') ||
-      log.message.toLowerCase().includes('merge pull request')
-    );
+    const mergeLogs = logs.filter(isMergeCommit);
     return mergeLogs.length > 0 && mergeLogs.every(log => ignoredHashes.has(log.hash));
   };
 
@@ -142,7 +139,7 @@ const CommitVisualizer = ({
                   ? 'bg-blue-50 text-blue-600 border-blue-100' 
                   : 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100'
               }`}
-              title={allMergesIgnored ? "恢复合并提交" : "一键忽略所有包含 'Merge' 关键字的提交"}
+              title={allMergesIgnored ? "恢复合并提交" : "一键忽略所有合并提交"}
             >
               <GitMerge size={12} />
               {allMergesIgnored ? '恢复合并提交' : '忽略合并提交'}

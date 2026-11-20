@@ -189,7 +189,7 @@ async function getGitLogs(repoPath, startDate, endDate, author, branches) {
         const logs = await git.log([...filteredOptions, ...args, ...pathSpec], {
             format: {
                 hash: '%H', date: '%aI', completedAt: '%cI', message: '%s',
-                refs: '%D', body: '%b', author_name: '%aN', author_email: '%aE'
+                refs: '%D', body: '%b', parents: '%P', author_name: '%aN', author_email: '%aE'
             }
         });
         return logs.all;

@@ -65,6 +65,20 @@ try {
   assert.match(entries[0].date, /^2026-11-01/);
   assert.match(entries[0].completedAt, /^2026-11-03/);
   assert.equal(entries[0].body.trim(), '任务细节');
+  assert.equal(entries[0].parents, '');
+  const baseBranch = execFileSync('git', ['-C', fixture, 'branch', '--show-current'], { encoding: 'utf8' }).trim();
+  const git = args => execFileSync('git', ['-C', fixture, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args]);
+  git(['checkout', '--quiet', '-b', 'feature']);
+  git(['commit', '--quiet', '--allow-empty', '-m', '实现新功能']);
+  git(['checkout', '--quiet', baseBranch]);
+  git(['commit', '--quiet', '--allow-empty', '-m', '普通开发变更']);
+  git(['merge', '--quiet', '--no-ff', 'feature', '-m', '自定义合并标题']);
+  const merged = await require('../backend/server/services/gitService.js').getGitLogs(fixture);
+  const { isMergeCommit } = await import('../frontend/src/lib/logSelection.js');
+  const merge = merged.find(entry => entry.message === '自定义合并标题');
+  assert.equal(merge.parents.split(' ').length, 2);
+  assert.equal(isMergeCommit(merge), true);
+  assert.equal(merged.filter(isMergeCommit).length, 1);
   console.log('PASS: Git completion time and task body');
 } finally {
   rmSync(fixture, { recursive: true, force: true });
