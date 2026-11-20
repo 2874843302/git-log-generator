@@ -18,6 +18,12 @@
   "build": {
     "appId": "com.gitlog.generator",
     "productName": "Git Log Generator",
+    "publish": {
+      "provider": "github",
+      "owner": "2874843302",
+      "repo": "git-log-generator",
+      "releaseType": "release"
+    },
     "directories": {
       "output": "dist_electron_2.5.15"
     },
